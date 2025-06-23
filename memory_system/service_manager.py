@@ -60,9 +60,9 @@ class QdrantManager:
 
     def __init__(self) -> None:
         """Initialize Qdrant service manager."""
-        self.container_name = "cognitive-memory-qdrant"
+        self.container_name = "heimdall-shared-qdrant"
         self.default_config = QdrantConfig()
-        self.default_port = self.default_config.get_port()
+        self.default_port = 6333  # Fixed port for shared instance
         self.default_data_dir = Path("./data/qdrant")
         self.docker_client = None
 
@@ -83,11 +83,11 @@ class QdrantManager:
         wait_timeout: int = 30,
     ) -> bool:
         """
-        Start Qdrant service.
+        Start shared Qdrant service.
 
         Args:
-            port: Port to run Qdrant on (defaults to config)
-            data_dir: Data directory path
+            port: Port to run Qdrant on (defaults to 6333 for shared instance)
+            data_dir: Data directory path (ignored for Docker, uses shared volume)
             detach: Run in background
             force_local: Force local binary instead of Docker
             wait_timeout: Seconds to wait for startup
@@ -95,54 +95,64 @@ class QdrantManager:
         Returns:
             bool: True if started successfully
         """
-        # Use default port if not provided
+        # Use fixed port for shared instance
         if port is None:
             port = self.default_port
 
         # Check if already running
         status = self.get_status()
         if status.status == ServiceStatus.RUNNING:
-            if status.port == port:
-                return True
-            else:
-                raise RuntimeError(
-                    f"Qdrant already running on port {status.port}, requested port {port}"
-                )
+            return True  # Shared instance is already running
 
         # Check port availability
         if self._is_port_in_use(port):
             raise RuntimeError(f"Port {port} is already in use")
 
-        # Determine data directory
+        # Determine data directory (only used for local binary)
         if data_dir:
             data_path = Path(data_dir)
         else:
             data_path = self.default_data_dir
 
-        data_path.mkdir(parents=True, exist_ok=True)
-
         # Try Docker first (unless forced local)
         if not force_local and self.docker_client:
             try:
-                return self._start_docker(port, data_path, detach, wait_timeout)
+                return self._start_docker_shared(detach, wait_timeout)
             except Exception as e:
                 # Fall back to local binary
                 print(f"Docker start failed ({e}), trying local binary...")
+                data_path.mkdir(parents=True, exist_ok=True)
 
         # Try local binary
+        data_path.mkdir(parents=True, exist_ok=True)
         return self._start_local(port, data_path, detach, wait_timeout)
 
     def stop(self) -> bool:
         """
-        Stop Qdrant service.
+        Stop shared Qdrant service.
 
         Returns:
             bool: True if stopped successfully
         """
         stopped_any = False
 
-        # Try stopping Docker container
+        # Try stopping shared container using docker-compose
         if self.docker_client:
+            try:
+                compose_file = (
+                    Path(__file__).parent.parent
+                    / "docker"
+                    / "docker-compose.template.yml"
+                )
+                if compose_file.exists():
+                    cmd = ["docker-compose", "-f", str(compose_file), "down"]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        stopped_any = True
+            except Exception:
+                pass
+
+            # Fallback: try stopping container directly
             try:
                 container = self.docker_client.containers.get(self.container_name)
                 container.stop(timeout=10)
@@ -169,7 +179,7 @@ class QdrantManager:
 
     def get_status(self) -> QdrantStatus:
         """
-        Get current Qdrant service status.
+        Get current shared Qdrant service status.
 
         Returns:
             QdrantStatus: Current status information
@@ -179,19 +189,27 @@ class QdrantManager:
             try:
                 container = self.docker_client.containers.get(self.container_name)
                 if container.status == "running":
-                    # Get port mapping
-                    port_info = container.attrs["NetworkSettings"]["Ports"]
-                    port = None
-                    for _container_port, host_bindings in port_info.items():
-                        if host_bindings:
-                            port = int(host_bindings[0]["HostPort"])
-                            break
+                    # Use fixed port for shared instance
+                    port = self.default_port
 
-                    # Simplified uptime calculation (placeholder)
-                    uptime = int(time.time()) - int(time.time())  # Placeholder
+                    # Calculate uptime from container start time
+                    started_at = container.attrs["State"]["StartedAt"]
+                    if started_at:
+                        import datetime
+
+                        start_time = datetime.datetime.fromisoformat(
+                            started_at.replace("Z", "+00:00")
+                        )
+                        uptime = int(
+                            (
+                                datetime.datetime.now(datetime.UTC) - start_time
+                            ).total_seconds()
+                        )
+                    else:
+                        uptime = None
 
                     # Check health
-                    health = self._check_health(port) if port else None
+                    health = self._check_health(port)
 
                     return QdrantStatus(
                         status=ServiceStatus.RUNNING,
@@ -210,8 +228,8 @@ class QdrantManager:
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
                 if proc.info["name"] and "qdrant" in proc.info["name"].lower():
-                    # Try to determine port from command line
-                    port = self.default_port  # Default assumption
+                    # Use fixed port for shared instance
+                    port = self.default_port
 
                     health = self._check_health(port)
 
@@ -228,7 +246,7 @@ class QdrantManager:
 
     def get_logs(self, lines: int = 50, follow: bool = False) -> Iterator[str]:
         """
-        Get Qdrant service logs.
+        Get shared Qdrant service logs.
 
         Args:
             lines: Number of lines to retrieve
@@ -265,46 +283,42 @@ class QdrantManager:
         # This is a simplified implementation
         yield "Local binary logs not implemented yet"
 
-    def _start_docker(
+    def _start_docker_shared(
         self,
-        port: int,
-        data_path: Path,
         detach: bool,
         wait_timeout: int,
     ) -> bool:
-        """Start Qdrant using Docker."""
+        """Start shared Qdrant using docker-compose."""
         try:
-            # Remove existing container if any
             if self.docker_client is None:
                 raise RuntimeError("Docker client not available")
-            try:
-                old_container = self.docker_client.containers.get(self.container_name)
-                old_container.stop(timeout=5)
-                old_container.remove()
-            except Exception:  # docker.errors.NotFound or any other exception
-                pass
 
-            # Start new container
-            self.docker_client.containers.run(
-                "qdrant/qdrant:latest",
-                name=self.container_name,
-                ports={f"{port}/tcp": port},
-                volumes={
-                    str(data_path.absolute()): {"bind": "/qdrant/storage", "mode": "rw"}
-                },
-                detach=detach,
-                remove=False,
-                environment={
-                    "QDRANT__SERVICE__HTTP_PORT": str(port),
-                    "QDRANT__SERVICE__GRPC_PORT": str(port + 1),
-                },
+            # Clean up old project-specific containers first
+            self._cleanup_legacy_containers()
+
+            # Use docker-compose to start shared instance
+            compose_file = (
+                Path(__file__).parent.parent / "docker" / "docker-compose.template.yml"
             )
+            if not compose_file.exists():
+                raise RuntimeError(f"Docker compose file not found: {compose_file}")
+
+            # Start using docker-compose
+            cmd = ["docker-compose", "-f", str(compose_file), "up", "-d", "qdrant"]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"docker-compose failed: {result.stderr}")
 
             # Wait for service to be ready
-            return self._wait_for_ready(port, wait_timeout)
+            return self._wait_for_ready(self.default_port, wait_timeout)
 
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to start shared Qdrant with docker-compose: {e.stderr}"
+            ) from e
         except Exception as e:
-            raise RuntimeError(f"Failed to start Qdrant with Docker: {e}") from e
+            raise RuntimeError(f"Failed to start shared Qdrant with Docker: {e}") from e
 
     def _start_local(
         self,
@@ -383,6 +397,38 @@ storage:
             return bool(response.status_code == 200)
         except Exception:
             return False
+
+    def _cleanup_legacy_containers(self) -> None:
+        """Clean up old project-specific containers to avoid conflicts."""
+        if not self.docker_client:
+            return
+
+        try:
+            # Find containers that match old naming pattern: heimdall-* or qdrant-*
+            all_containers = self.docker_client.containers.list(all=True)
+            legacy_containers = []
+
+            for container in all_containers:
+                name = container.name
+                if (name.startswith("heimdall-") and name != self.container_name) or (
+                    name.startswith("qdrant-") and name != self.container_name
+                ):
+                    legacy_containers.append(container)
+
+            if legacy_containers:
+                print(
+                    f"Found {len(legacy_containers)} legacy project containers, cleaning up..."
+                )
+                for container in legacy_containers:
+                    try:
+                        print(f"  Stopping legacy container: {container.name}")
+                        container.stop(timeout=5)
+                        container.remove()
+                    except Exception as e:
+                        print(f"  Warning: Failed to remove {container.name}: {e}")
+
+        except Exception as e:
+            print(f"Warning: Failed to cleanup legacy containers: {e}")
 
     def _is_port_in_use(self, port: int) -> bool:
         """Check if a port is in use."""

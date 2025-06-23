@@ -1,17 +1,16 @@
-# Docker Compose Template for Heimdall MCP Server
-# This template is used by setup scripts to generate project-specific configurations
-# Variables are substituted by the setup script during deployment
-
-version: '3.8'
+# Docker Compose Configuration for Shared Qdrant Instance
+# Simplified shared architecture - single Qdrant container for all projects
+# Project isolation achieved through collection namespacing
 
 services:
   qdrant:
-    container_name: "qdrant-${REPO_NAME}-${PROJECT_HASH}"
+    container_name: "heimdall-shared-qdrant"
     image: qdrant/qdrant:v1.14.1
     ports:
-      - "${QDRANT_PORT}:6333"
+      - "6333:6333"
+      - "6334:6334"
     volumes:
-      - "${PROJECT_DATA_DIR}/qdrant:/qdrant/storage"
+      - heimdall-shared-data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -26,83 +25,12 @@ services:
     networks:
       - heimdall-network
 
-  heimdall-mcp:
-    container_name: "heimdall-${REPO_NAME}-${PROJECT_HASH}"
-    image: "heimdall-mcp:${PROJECT_HASH}"
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    environment:
-      # Project-specific configuration
-      - PROJECT_ID=${PROJECT_HASH}
-      - PROJECT_PATH=${PROJECT_PATH}
-      - QDRANT_COLLECTION_PREFIX=${PROJECT_HASH}
-
-      # Service URLs (consistent with .env.template)
-      - QDRANT_URL=http://qdrant-${REPO_NAME}-${PROJECT_HASH}:6333
-
-      # Storage paths (consistent with .env.template)
-      - SQLITE_PATH=/app/data/cognitive_memory.db
-      - MODEL_CACHE_DIR=/app/models
-      - SENTENCE_TRANSFORMERS_HOME=/app/models
-
-      # ML Configuration (consistent with .env.template)
-      - SENTENCE_BERT_MODEL=all-MiniLM-L6-v2
-      - ACTIVATION_THRESHOLD=0.7
-      - BRIDGE_DISCOVERY_K=5
-      - MAX_ACTIVATIONS=50
-
-      # ONNX Model paths - point to mounted /app/data/models
-      - ONNX_MODEL_PATH=/app/data/models/all-MiniLM-L6-v2.onnx
-      - ONNX_TOKENIZER_PATH=/app/data/models/tokenizer
-      - ONNX_CONFIG_PATH=/app/data/models/model_config.json
-
-      # File monitoring configuration
-      - MONITORING_ENABLED=true
-      - MONITORING_TARGET_PATH=${PROJECT_DATA_DIR}
-      - MONITORING_INTERVAL_SECONDS=5.0
-      - MONITORING_BATCH_SIZE=10
-      - MONITORING_IGNORE_PATTERNS=.git,node_modules,__pycache__,.pytest_cache
-
-      # File synchronization configuration
-      - SYNC_ENABLED=true
-      - SYNC_ATOMIC_OPERATIONS=true
-      - SYNC_CONTINUE_ON_ERROR=true
-      - SYNC_MAX_RETRY_ATTEMPTS=3
-      - SYNC_RETRY_DELAY_SECONDS=1.0
-
-      # System configuration
-      - PYTHONPATH=/app
-      - LOG_LEVEL=INFO
-    volumes:
-      - "${PROJECT_DATA_DIR}/heimdall:/app/data"
-      - "${PROJECT_PATH}:${PROJECT_PATH}:ro"
-    depends_on:
-      - qdrant
-    healthcheck:
-      test: ["CMD", "python", "-c", "import cognitive_memory; print('OK')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    restart: unless-stopped
-    networks:
-      - heimdall-network
-
 volumes:
-  qdrant-data:
-    name: "heimdall-qdrant-${PROJECT_HASH}"
-    driver: local
-  heimdall-data:
-    name: "heimdall-data-${PROJECT_HASH}"
+  heimdall-shared-data:
+    name: "heimdall-shared-data"
     driver: local
 
 networks:
   heimdall-network:
-    name: "heimdall-network-${REPO_NAME}-${PROJECT_HASH}"
+    name: "heimdall-shared-network"
     driver: bridge
-
-# Metadata for setup scripts
-# PROJECT_HASH: 8-character hash derived from project path
-# PROJECT_PATH: Absolute path to project directory
-# QDRANT_PORT: Dynamic port allocation (6333 + hash offset)
-# MCP_SERVER_PORT: Dynamic port allocation (8080 + hash offset)
-# PROJECT_DATA_DIR: Host directory for persistent data storage
