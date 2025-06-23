@@ -7,7 +7,7 @@ stack for significant memory and dependency reduction.
 """
 
 import json
-import os
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -38,26 +38,32 @@ class ONNXEmbeddingProvider(EmbeddingProvider):
         Initialize the ONNX embedding provider.
 
         Args:
-            model_path: Path to the ONNX model file. Defaults to data/models/all-MiniLM-L6-v2.onnx
-            tokenizer_path: Path to the tokenizer directory. Defaults to data/models/tokenizer
-            config_path: Path to the model config JSON. Defaults to data/models/model_config.json
+            model_path: Path to the ONNX model file. If None, uses package resource.
+            tokenizer_path: Path to the tokenizer directory. If None, uses package resource.
+            config_path: Path to the model config JSON. If None, uses package resource.
         """
         self.embedding_config = EmbeddingConfig.from_env()
 
-        # Set default paths, checking environment variables first
-        default_model_path = os.getenv(
-            "ONNX_MODEL_PATH", "./data/models/all-MiniLM-L6-v2.onnx"
-        )
-        default_tokenizer_path = os.getenv(
-            "ONNX_TOKENIZER_PATH", "./data/models/tokenizer"
-        )
-        default_config_path = os.getenv(
-            "ONNX_CONFIG_PATH", "./data/models/model_config.json"
+        # Use provided paths or get from package resources
+        self.model_path = (
+            Path(model_path)
+            if model_path
+            else self._get_package_resource_path(
+                f"{self.embedding_config.model_name}.onnx"
+            )
         )
 
-        self.model_path = Path(model_path or default_model_path)
-        self.tokenizer_path = Path(tokenizer_path or default_tokenizer_path)
-        self.config_path = Path(config_path or default_config_path)
+        self.tokenizer_path = (
+            Path(tokenizer_path)
+            if tokenizer_path
+            else self._get_package_resource_path("tokenizer")
+        )
+
+        self.config_path = (
+            Path(config_path)
+            if config_path
+            else self._get_package_resource_path("model_config.json")
+        )
 
         logger.info(
             "Initializing ONNX embedding provider",
@@ -90,6 +96,21 @@ class ONNXEmbeddingProvider(EmbeddingProvider):
             raise RuntimeError(
                 f"Failed to initialize ONNX embedding provider: {e}"
             ) from e
+
+    def _get_package_resource_path(self, filename: str) -> Path:
+        """Get path to a resource file within the package."""
+        try:
+            with resources.path(
+                "cognitive_memory.data.models", filename
+            ) as resource_path:
+                return Path(resource_path)
+        except (ImportError, FileNotFoundError):
+            # Fallback for development environment
+            fallback_path = Path(__file__).parent.parent / "data" / "models" / filename
+            if fallback_path.exists():
+                return fallback_path
+            # Last resort - old relative path
+            return Path("./data/models") / filename
 
     def _load_config(self) -> None:
         """Load model configuration from JSON file."""

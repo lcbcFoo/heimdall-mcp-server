@@ -599,7 +599,7 @@ class HierarchicalMemoryStorage(VectorStorage):
                 info = self.client.get_collection(collection_name)
                 stats[f"level_{level}"] = {
                     "collection_name": collection_name,
-                    "vectors_count": info.vectors_count,
+                    "vectors_count": info.points_count,  # Use points_count as vectors_count
                     "indexed_vectors_count": info.indexed_vectors_count,
                     "points_count": info.points_count,
                     "segments_count": info.segments_count,

@@ -25,7 +25,7 @@ try:
     DOCKER_AVAILABLE = True
 except ImportError:
     DOCKER_AVAILABLE = False
-    docker = None  # type: ignore
+    docker = None
 
 
 class ServiceStatus(Enum):
@@ -68,7 +68,7 @@ class QdrantManager:
 
         if DOCKER_AVAILABLE and docker is not None:
             try:
-                self.docker_client = docker.from_env()  # type: ignore
+                self.docker_client = docker.from_env()
                 # Test Docker connection
                 self.docker_client.ping()
             except Exception:
@@ -145,7 +145,7 @@ class QdrantManager:
                     / "docker-compose.template.yml"
                 )
                 if compose_file.exists():
-                    cmd = ["docker-compose", "-f", str(compose_file), "down"]
+                    cmd = ["docker", "compose", "-f", str(compose_file), "down"]
                     result = subprocess.run(cmd, capture_output=True, text=True)
                     if result.returncode == 0:
                         stopped_any = True
@@ -297,18 +297,64 @@ class QdrantManager:
             self._cleanup_legacy_containers()
 
             # Use docker-compose to start shared instance
-            compose_file = (
-                Path(__file__).parent.parent / "docker" / "docker-compose.template.yml"
-            )
-            if not compose_file.exists():
-                raise RuntimeError(f"Docker compose file not found: {compose_file}")
+            # Create docker-compose content inline (no external files needed)
+            compose_content = """
+version: '3.8'
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    container_name: heimdall-shared-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-            # Start using docker-compose
-            cmd = ["docker-compose", "-f", str(compose_file), "up", "-d", "qdrant"]
+volumes:
+  qdrant_storage:
+    driver: local
+""".strip()
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Write compose file to temporary location
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yml", delete=False
+            ) as f:
+                f.write(compose_content)
+                compose_file = Path(f.name)
+
+            # Start using docker compose (try modern syntax first, then legacy)
+            cmd_modern = [
+                "docker",
+                "compose",
+                "-f",
+                str(compose_file),
+                "up",
+                "-d",
+                "qdrant",
+            ]
+
+            try:
+                result = subprocess.run(
+                    cmd_modern, capture_output=True, text=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                raise RuntimeError(
+                    f"Docker compose failed: {e}. Make sure Docker is installed and running."
+                ) from e
+
             if result.returncode != 0:
-                raise RuntimeError(f"docker-compose failed: {result.stderr}")
+                raise RuntimeError(f"Docker compose failed: {result.stderr}")
 
             # Wait for service to be ready
             return self._wait_for_ready(self.default_port, wait_timeout)

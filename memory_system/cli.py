@@ -959,6 +959,52 @@ def project_init(
 
             progress.update(task, description="✅ Project collections initialized")
 
+        # Check and download spaCy model if needed
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Checking spaCy model...", total=None)
+
+            try:
+                import spacy
+
+                # Try to load the model
+                spacy.load("en_core_web_md")
+                progress.update(task, description="✅ spaCy model already available")
+            except OSError:
+                # Model not found, download it
+                progress.update(
+                    task, description="📥 Downloading spaCy model (en_core_web_md)..."
+                )
+
+                import subprocess
+                import sys
+
+                result = subprocess.run(
+                    [sys.executable, "-m", "spacy", "download", "en_core_web_md"],
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    progress.update(
+                        task, description="✅ spaCy model downloaded successfully"
+                    )
+                else:
+                    progress.update(
+                        task, description="❌ Failed to download spaCy model"
+                    )
+                    console.print(
+                        f"❌ Failed to download spaCy model. Error: {result.stderr}",
+                        style="bold red",
+                    )
+                    console.print(
+                        "Please run manually: python -m spacy download en_core_web_md",
+                        style="bold yellow",
+                    )
+
         # Create project configuration file
         heimdall_dir = project_path / ".heimdall"
         heimdall_dir.mkdir(exist_ok=True)
@@ -987,14 +1033,14 @@ def project_init(
             console.print(f"📝 Created configuration: {config_file}")
 
         if json_output:
-            result = {
+            output_data = {
                 "project_id": project_id,
                 "project_root": str(project_path),
                 "qdrant_url": qdrant_config.url,
                 "config_file": str(config_file),
                 "status": "initialized",
             }
-            console.print(json.dumps(result, indent=2))
+            console.print(json.dumps(output_data, indent=2))
         else:
             console.print("✅ Project initialization complete!", style="bold green")
 
@@ -1072,12 +1118,25 @@ def project_list(
                         project_id = parts[0]
                         if project_id not in projects:
                             projects[project_id] = []
+
+                        # Get detailed collection info for stats
+                        try:
+                            collection_info = client.get_collection(collection.name)
+                            points_count = collection_info.points_count
+                            indexed_vectors_count = (
+                                collection_info.indexed_vectors_count
+                            )
+                        except Exception:
+                            points_count = 0
+                            indexed_vectors_count = 0
+
                         projects[project_id].append(
                             {
                                 "name": collection.name,
                                 "level": parts[1],
-                                "vectors_count": collection.vectors_count or 0,
-                                "points_count": collection.points_count or 0,
+                                "vectors_count": points_count,  # Use points_count as vectors_count
+                                "points_count": points_count,
+                                "indexed_vectors_count": indexed_vectors_count,
                             }
                         )
 
@@ -1197,7 +1256,15 @@ def project_clean(
                 raise typer.Exit(1)
 
             collection_names = [c.name for c in project_collections]
-            total_vectors = sum(c.vectors_count or 0 for c in project_collections)
+
+            # Get detailed collection info to calculate total vectors
+            total_vectors = 0
+            for collection in project_collections:
+                try:
+                    collection_info = client.get_collection(collection.name)
+                    total_vectors += collection_info.points_count
+                except Exception:
+                    pass  # Skip collections that can't be queried
 
             if dry_run:
                 console.print(

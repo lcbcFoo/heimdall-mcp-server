@@ -1,6 +1,6 @@
 # Heimdall MCP Server - Your AI Coding Assistant's Long-Term Memory
 
-[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](hhttps://github.com/lcbcFoo/heimdall-mcp-server/blob/main/README.mdttps://opensource.org/licenses/Apache-2.0)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://www.docker.com/)
 [![MCP Protocol](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)](https://modelcontextprotocol.io/)
@@ -23,15 +23,14 @@ https://github.com/user-attachments/assets/120b3d32-72d1-4d42-b3ab-285e8a711981
 
 ## 🚀 Getting Started
 
-**Prerequisites**: Docker and Docker Compose must be installed and running.
+**Prerequisites**: Python 3.10+ and Docker (for Qdrant vector database).
 
-Heimdall is designed to be set up on a per-project basis. Run these commands from the root directory of your code repository.
+Heimdall uses a shared Qdrant architecture - one Qdrant instance serves all your projects with isolated collections.
 
-### 1. Clone the repository
+### 1. Install Heimdall
 
 ```bash
-git clone https://github.com/lcbcFoo/heimdall-mcp-server.git
-# Cloned to /path/to/heimdall-mcp-server
+pip install heimdall-mcp
 ```
 
 ### 2. Navigate to Your Project
@@ -40,79 +39,92 @@ git clone https://github.com/lcbcFoo/heimdall-mcp-server.git
 cd /path/to/your/project
 ```
 
-### 3. Run the Setup Script
+### 3. Initialize Project Memory
 
-This command deploys project-isolated Docker containers for the Heimdall server and its Qdrant vector database.
+This command sets up project-specific collections in the shared Qdrant instance:
 
 ```bash
-# For integration with Claude Code, just run:
-/path/to/heimdall-mcp-server/setup_claude_code_mcp.sh
+# Initialize project and start Qdrant if needed
+memory_system project init
 
-# For a generic setup with other models
-# /path/to/heimdall-mcp-server/scripts/setup_project_memory.sh
-# This will put the MCP server docker up, you will then need to configure the Coding Assistant you are using.
+# For Claude Code integration specifically
+# This creates MCP server configuration
+setup_claude_code_mcp.sh
 ```
-**Note: this creates a `.heimdall-mcp` directory in your project - DON'T COMMIT IT! I highly recommend adding it to .gitignore**
+
+**Note: this creates a `.heimdall/` directory in your project for configuration - you can commit this!**
 
 ### 4. Load Project Knowledge
 
-Populate the `.heimdall-mcp/` directory (created by the above scripts) with your project's documentation (e.g., Markdown files).
+Load your project's documentation and git history:
 
-You can create inner directories or create symbolic links to an existing docs folder (ln -r -s).
+```bash
+# Load all documentation from docs/ directory or specific documents you want
+memory_system load docs/
 
-When you have populated the directory with docs, run the loading script. (it can take some time...)
+# Load git commit history
+memory_system load-git
 
-```Bash
-# Example: Symlink your existing architecture docs
-# ln -s docs/architecture .heimdall-mcp/arch-docs
-
-# This script indexes your docs and the full git history
-/path/to/heimdall-mcp-server/scripts/load_project_content.sh
+# Or load everything at once
+cognitive-cli load .
 ```
 
 Your project's memory is now active and ready for your LLM.
 
-#### Automatic File Change detection
+#### Automatic File Monitoring
 
-After this point, if you add/change/remove md files on that directory the system will automatically detect and update memories.
+Start automatic file change detection:
+
+```bash
+# Start monitoring service
+memory_system monitor start
+
+# Check status
+memory_system monitor status
+```
 
 ### 5. Real-time Git Integration
 
-`load_project_content.sh` loads git history, but Heimdall also supports automatically updates to memories when you make commits via git hooks
-
-#### Automatic Git Hook (Recommended)
+Install git hooks for automatic memory updates on commits:
 
 ```bash
-# Install the post-commit hook (run from your project directory)
-/path/to/heimdall-mcp-server/scripts/git-hook-installer.sh --install
+# Install the post-commit hook (Python-based, cross-platform)
+python scripts/git_hook_installer.py --install
 ```
 
-**Note**: If you have other post-commit git-hook configured, it will be saved as backup and still be executed before Heimdall MCP hook.
+**Note**: If you have existing post-commit hooks, they'll be safely chained and preserved.
 
-With post-commit git hooks configured, new memories are recovered from commits automatically. To remove:
+With git hooks configured, new memories are created automatically from commits. To remove:
 
 ```bash
-/path/to/heimdall-mcp-server/scripts/git-hook-installer.sh --uninstall
+python scripts/git_hook_installer.py --uninstall
 ```
 
-#### Manual Updates
+#### Manual Git Updates
 
-If you prefer to not have automatic updates using git hooks, you still can periodically use:
+Load new commits manually:
 
 ```bash
 # Load only new commits since last update
-/path/to/heimdall-mcp-server/scripts/load_project_content.sh --git-only
+memory_system load-git incremental
 ```
 
 ## 🧹 Cleanup
 
-To remove Heimdall from a project, use the cleanup script instead of `rm -rf`:
+To remove Heimdall from a project:
 
 ```bash
-/path/to/heimdall-mcp-server/scripts/cleanup_memory.sh --project
+# Remove project collections from shared Qdrant
+memory_system project clean <project_id>
+
+# List projects to see available project IDs
+memory_system project list
+
+# Remove local configuration
+rm -rf .heimdall/
 ```
 
-This handles Docker permission issues automatically.
+This cleanly removes project-specific data while preserving the shared Qdrant instance for other projects.
 
 ## ⚙️ How It Works Under the Hood
 
@@ -209,9 +221,10 @@ You can instruct your LLM to use the following four tools to interact with its m
 
 To maximize the effectiveness of Heimdall:
 
-  * **Provide Quality Documentation:** The more detailed your markdown files in `.heimdall-mcp/`, the better the context. Think architecture decision records, style guides, and API documentation.
-  * **Don't mix progress status documents:** Avoid feeding progress or status documents into the memory system. Prefer using meaningful git commit messages. The system deals better with ranking newer commits than identifying outdated docs.
+  * **Provide Quality Documentation:** Load detailed documentation with `memory_system load docs/`. Think architecture decision records, style guides, and API documentation.
+  * **Use Project Isolation:** Each project gets its own collections in the shared Qdrant instance - no cross-project contamination.
   * **Maintain Good Git Hygiene:** Write clear and descriptive commit messages. A message like `feat(api): add user authentication endpoint` is far more valuable than `more stuff`.
+  * **Monitor Your Memory:** Use `memory_status` tool regularly to check system health and memory statistics.
   * **Guide Your Assistant:** Use a system prompt (like a `CLAUDE.md` file) to instruct your LLM on *how* and *when* to use the available memory tools.
 
 ## Technology Stack:
