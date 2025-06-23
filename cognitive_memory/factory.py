@@ -93,6 +93,7 @@ def create_default_system(config: SystemConfig | None = None) -> CognitiveMemory
 
         vector_storage = create_hierarchical_storage(
             vector_size=config.embedding.embedding_dimension,
+            project_id=config.project_id,
             host=host,
             port=port,
             prefer_grpc=config.qdrant.prefer_grpc,

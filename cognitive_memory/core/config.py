@@ -5,17 +5,52 @@ This module provides centralized configuration management using environment
 variables and .env files as specified in the technical architecture.
 """
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import yaml
 from dotenv import load_dotenv
 from loguru import logger
 
 if TYPE_CHECKING:
     from .memory import CognitiveMemory
+
+
+def get_project_id(path: str | Path | None = None) -> str:
+    """
+    Generate project ID from directory path.
+
+    Creates a deterministic project identifier in the format: {repo_name}_{hash8}
+    where hash8 is the first 8 characters of the SHA256 hash of the absolute path.
+
+    Args:
+        path: Directory path to generate ID from. If None, uses current working directory.
+
+    Returns:
+        str: Project ID in format "repo_name_hash8"
+    """
+    if path is None:
+        path = Path.cwd()
+    else:
+        path = Path(path)
+
+    # Use absolute path for consistent hashing
+    abs_path = path.resolve()
+
+    # Generate hash from absolute path
+    path_hash = hashlib.sha256(str(abs_path).encode()).hexdigest()[:8]
+
+    # Extract repo name from directory
+    repo_name = abs_path.name
+
+    # Sanitize repo name for collection naming (replace non-alphanumeric with underscore)
+    repo_name = re.sub(r"[^a-zA-Z0-9]", "_", repo_name)
+
+    return f"{repo_name}_{path_hash}"
 
 
 def detect_container_environment() -> bool:
@@ -41,14 +76,60 @@ def detect_container_environment() -> bool:
 
 def detect_project_config() -> dict[str, str] | None:
     """
-    Detect project-specific configuration from Docker Compose file.
+    Detect project-specific configuration from .heimdall/config.yaml or legacy Docker Compose.
 
-    Looks for .heimdall-mcp/docker-compose.yml in current directory
-    and extracts Qdrant port mapping if found.
+    Looks for:
+    1. .heimdall/config.yaml (new format)
+    2. .heimdall-mcp/docker-compose.yml (legacy format)
 
     Returns:
         dict with project config overrides, or None if no project setup found
     """
+    # Check for new .heimdall/config.yaml format first
+    heimdall_config = Path(".heimdall/config.yaml")
+    if heimdall_config.exists():
+        try:
+            config_data = yaml.safe_load(heimdall_config.read_text())
+            if config_data and isinstance(config_data, dict):
+                # Convert YAML config to environment variable format
+                env_overrides = {}
+
+                # Map qdrant_url to QDRANT_URL
+                if "qdrant_url" in config_data:
+                    env_overrides["QDRANT_URL"] = config_data["qdrant_url"]
+
+                # Map monitoring settings
+                if "monitoring" in config_data and isinstance(
+                    config_data["monitoring"], dict
+                ):
+                    monitoring = config_data["monitoring"]
+                    if "target_path" in monitoring:
+                        env_overrides["MONITORING_TARGET_PATH"] = monitoring[
+                            "target_path"
+                        ]
+                    if "interval_seconds" in monitoring:
+                        env_overrides["MONITORING_INTERVAL_SECONDS"] = str(
+                            monitoring["interval_seconds"]
+                        )
+
+                # Map database settings
+                if "database" in config_data and isinstance(
+                    config_data["database"], dict
+                ):
+                    database = config_data["database"]
+                    if "path" in database:
+                        env_overrides["SQLITE_PATH"] = database["path"]
+
+                if env_overrides:
+                    logger.debug(
+                        f"Loaded project config from .heimdall/config.yaml: {list(env_overrides.keys())}"
+                    )
+                    return env_overrides
+
+        except Exception as e:
+            logger.warning(f"Failed to parse .heimdall/config.yaml: {e}")
+
+    # Fall back to legacy Docker Compose detection
     compose_file = Path(".heimdall-mcp/docker-compose.yml")
     if not compose_file.exists():
         return None
@@ -61,7 +142,9 @@ def detect_project_config() -> dict[str, str] | None:
         if port_match:
             external_port = port_match.group(1)
             project_config = {"QDRANT_URL": f"http://localhost:{external_port}"}
-            logger.debug(f"Detected project-specific Qdrant port: {external_port}")
+            logger.debug(
+                f"Detected project-specific Qdrant port from docker-compose: {external_port}"
+            )
             return project_config
 
     except Exception as e:
@@ -497,6 +580,9 @@ class SystemConfig:
     max_memory_usage_mb: int = 1024
     cleanup_interval_hours: int = 24
 
+    # Project identification
+    project_id: str = ""
+
     @classmethod
     def from_env(cls, env_file: str | None = None) -> "SystemConfig":
         """Create complete system configuration from environment."""
@@ -517,6 +603,9 @@ class SystemConfig:
                     os.environ[key] = value
                     logger.debug(f"Using project-specific config: {key}={value}")
 
+        # Generate project ID for this configuration
+        project_id = get_project_id()
+
         return cls(
             qdrant=QdrantConfig.from_env(),
             database=DatabaseConfig.from_env(),
@@ -526,6 +615,7 @@ class SystemConfig:
             debug=os.getenv("DEBUG", "false").lower() == "true",
             max_memory_usage_mb=int(os.getenv("MAX_MEMORY_USAGE_MB", "1024")),
             cleanup_interval_hours=int(os.getenv("CLEANUP_INTERVAL_HOURS", "24")),
+            project_id=project_id,
         )
 
     def validate(self) -> bool:
@@ -710,6 +800,7 @@ class SystemConfig:
                 "debug": self.debug,
                 "max_memory_usage_mb": self.max_memory_usage_mb,
                 "cleanup_interval_hours": self.cleanup_interval_hours,
+                "project_id": self.project_id,
             },
         }
 

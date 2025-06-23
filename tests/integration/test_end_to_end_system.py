@@ -29,7 +29,8 @@ from interfaces.cli import CognitiveCLI
 class MockQdrantClient:
     """Mock Qdrant client for end-to-end testing."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, project_id: str = "test_project_12345678", **kwargs):
+        self.project_id = project_id
         self.collections = []
         self.points = {}
         self.next_point_id = 1
@@ -37,9 +38,9 @@ class MockQdrantClient:
     def get_collections(self):
         mock_collections = MagicMock()
         mock_collections.collections = [
-            MagicMock(name="cognitive_concepts"),
-            MagicMock(name="cognitive_contexts"),
-            MagicMock(name="cognitive_episodes"),
+            MagicMock(name=f"{self.project_id}_concepts"),
+            MagicMock(name=f"{self.project_id}_contexts"),
+            MagicMock(name=f"{self.project_id}_episodes"),
         ]
         return mock_collections
 

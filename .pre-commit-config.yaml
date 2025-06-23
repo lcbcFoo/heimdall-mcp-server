@@ -21,7 +21,7 @@ repos:
       - id: mypy
         args: [--ignore-missing-imports]
         exclude: ^tests/
-        additional_dependencies: ['types-requests']
+        additional_dependencies: ['types-requests', 'types-PyYAML']
 
   - repo: local
     hooks:

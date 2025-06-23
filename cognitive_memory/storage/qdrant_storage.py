@@ -36,23 +36,24 @@ class CollectionConfig:
 class QdrantCollectionManager:
     """Manages Qdrant collections for hierarchical memory storage."""
 
-    def __init__(self, client: QdrantClient, vector_size: int):
-        """Initialize collection manager."""
+    def __init__(self, client: QdrantClient, vector_size: int, project_id: str):
+        """Initialize collection manager with project-scoped collections."""
         self.client = client
         self.vector_size = vector_size
+        self.project_id = project_id
         self.collections = {
             0: CollectionConfig(
-                name="cognitive_concepts",
+                name=f"{project_id}_concepts",
                 vector_size=vector_size,
                 distance=Distance.COSINE,
             ),
             1: CollectionConfig(
-                name="cognitive_contexts",
+                name=f"{project_id}_contexts",
                 vector_size=vector_size,
                 distance=Distance.COSINE,
             ),
             2: CollectionConfig(
-                name="cognitive_episodes",
+                name=f"{project_id}_episodes",
                 vector_size=vector_size,
                 distance=Distance.COSINE,
             ),
@@ -110,7 +111,7 @@ class QdrantCollectionManager:
         return self.collections[level].name
 
     def delete_all_collections(self) -> bool:
-        """Delete all collections (used for cleanup)."""
+        """Delete all collections for this project (used for cleanup)."""
         try:
             for config in self.collections.values():
                 if self._collection_exists(config.name):
@@ -119,6 +120,72 @@ class QdrantCollectionManager:
             return True
         except Exception as e:
             logger.error("Failed to delete collections", error=str(e))
+            return False
+
+    def list_project_collections(self) -> list[str]:
+        """List all collections for this project."""
+        try:
+            all_collections = self.client.get_collections().collections
+            project_collections = [
+                c.name
+                for c in all_collections
+                if c.name.startswith(f"{self.project_id}_")
+            ]
+            return project_collections
+        except Exception as e:
+            logger.error("Failed to list project collections", error=str(e))
+            return []
+
+    def get_all_projects(self) -> set[str]:
+        """Discover all project IDs from existing collections."""
+        try:
+            all_collections = self.client.get_collections().collections
+            projects = set()
+            for collection in all_collections:
+                # Extract project_id from collection names like "project_id_concepts"
+                if "_" in collection.name:
+                    parts = collection.name.split("_")
+                    if len(parts) >= 2 and parts[-1] in [
+                        "concepts",
+                        "contexts",
+                        "episodes",
+                    ]:
+                        # Rejoin all parts except the last one to get project_id
+                        project_id = "_".join(parts[:-1])
+                        projects.add(project_id)
+            return projects
+        except Exception as e:
+            logger.error("Failed to discover projects", error=str(e))
+            return set()
+
+    @classmethod
+    def delete_project_collections(cls, client: QdrantClient, project_id: str) -> bool:
+        """Delete all collections for a specific project."""
+        try:
+            all_collections = client.get_collections().collections
+            deleted_count = 0
+            for collection in all_collections:
+                if collection.name.startswith(f"{project_id}_"):
+                    client.delete_collection(collection.name)
+                    logger.info(
+                        "Deleted project collection",
+                        project_id=project_id,
+                        collection=collection.name,
+                    )
+                    deleted_count += 1
+
+            logger.info(
+                "Project collections cleanup completed",
+                project_id=project_id,
+                deleted_count=deleted_count,
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                "Failed to delete project collections",
+                project_id=project_id,
+                error=str(e),
+            )
             return False
 
 
@@ -245,6 +312,7 @@ class HierarchicalMemoryStorage(VectorStorage):
     def __init__(
         self,
         vector_size: int,
+        project_id: str,
         host: str | None = None,
         port: int | None = None,
         grpc_port: int | None = None,
@@ -255,12 +323,13 @@ class HierarchicalMemoryStorage(VectorStorage):
         Initialize hierarchical memory storage.
 
         Args:
+            vector_size: Dimension of embedding vectors (from configuration)
+            project_id: Project identifier for collection namespacing
             host: Qdrant server host (defaults to config)
             port: Qdrant HTTP port (defaults to config)
             grpc_port: Qdrant gRPC port (defaults to config port + 1)
             prefer_grpc: Whether to prefer gRPC connection
             timeout: Connection timeout in seconds (defaults to config)
-            vector_size: Dimension of embedding vectors (from configuration)
         """
         # Use defaults from config if not provided
         default_config = QdrantConfig()
@@ -269,6 +338,7 @@ class HierarchicalMemoryStorage(VectorStorage):
         self.grpc_port = grpc_port or (self.port + 1)
         self.timeout = timeout or default_config.timeout
         self.vector_size = vector_size
+        self.project_id = project_id
 
         # Initialize Qdrant client
         try:
@@ -291,7 +361,9 @@ class HierarchicalMemoryStorage(VectorStorage):
             raise
 
         # Initialize collection manager and search engine
-        self.collection_manager = QdrantCollectionManager(self.client, vector_size)
+        self.collection_manager = QdrantCollectionManager(
+            self.client, vector_size, project_id
+        )
         self.search_engine = VectorSearchEngine(self.client, self.collection_manager)
 
         # Initialize collections
@@ -509,6 +581,7 @@ class HierarchicalMemoryStorage(VectorStorage):
 
 def create_hierarchical_storage(
     vector_size: int,
+    project_id: str,
     host: str | None = None,
     port: int | None = None,
     grpc_port: int | None = None,
@@ -518,17 +591,19 @@ def create_hierarchical_storage(
     Factory function to create hierarchical memory storage.
 
     Args:
+        vector_size: Dimension of embedding vectors (from configuration)
+        project_id: Project identifier for collection namespacing
         host: Qdrant server host (defaults to config)
         port: Qdrant HTTP port (defaults to config)
         grpc_port: Qdrant gRPC port (defaults to config port + 1)
         prefer_grpc: Whether to prefer gRPC connection
-        vector_size: Dimension of embedding vectors (from configuration)
 
     Returns:
         HierarchicalMemoryStorage: Configured storage instance
     """
     return HierarchicalMemoryStorage(
         vector_size=vector_size,
+        project_id=project_id,
         host=host,
         port=port,
         grpc_port=grpc_port,

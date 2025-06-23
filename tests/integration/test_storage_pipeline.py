@@ -27,8 +27,9 @@ from cognitive_memory.storage import (
 class MockQdrantClient:
     """Mock Qdrant client for testing without external dependencies."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, project_id: str = "test_project_12345678", **kwargs):
         # Accept any keyword arguments to match QdrantClient signature
+        self.project_id = project_id
         self.collections = []
         self.points = {}
 
@@ -36,9 +37,9 @@ class MockQdrantClient:
         """Mock get collections."""
         mock_collections = MagicMock()
         mock_collections.collections = [
-            MagicMock(name="cognitive_concepts"),
-            MagicMock(name="cognitive_contexts"),
-            MagicMock(name="cognitive_episodes"),
+            MagicMock(name=f"{self.project_id}_concepts"),
+            MagicMock(name=f"{self.project_id}_contexts"),
+            MagicMock(name=f"{self.project_id}_episodes"),
         ]
         return mock_collections
 
@@ -176,7 +177,9 @@ class TestStoragePipelineIntegration:
         with patch(
             "cognitive_memory.storage.qdrant_storage.QdrantClient", MockQdrantClient
         ):
-            vector_storage = create_hierarchical_storage(vector_size=vector_size)
+            vector_storage = create_hierarchical_storage(
+                vector_size=vector_size, project_id="test_project_12345678"
+            )
 
         yield {
             "encoder": mock_encoder,
