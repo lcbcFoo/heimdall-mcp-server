@@ -142,21 +142,89 @@ class QdrantCollectionManager:
             all_collections = self.client.get_collections().collections
             projects = set()
             for collection in all_collections:
-                # Extract project_id from collection names like "project_id_concepts"
-                if "_" in collection.name:
-                    parts = collection.name.split("_")
-                    if len(parts) >= 2 and parts[-1] in [
-                        "concepts",
-                        "contexts",
-                        "episodes",
-                    ]:
-                        # Rejoin all parts except the last one to get project_id
-                        project_id = "_".join(parts[:-1])
-                        projects.add(project_id)
+                project_id = self._extract_project_id_from_collection(collection.name)
+                if project_id:
+                    projects.add(project_id)
             return projects
         except Exception as e:
             logger.error("Failed to discover projects", error=str(e))
             return set()
+
+    def _extract_project_id_from_collection(self, collection_name: str) -> str | None:
+        """
+        Extract and validate project ID from collection name.
+
+        Expected format: {project_id}_{memory_level}
+        where project_id must end with an 8-character hexadecimal hash.
+
+        Args:
+            collection_name: Collection name to parse
+
+        Returns:
+            Valid project ID if found, None otherwise
+        """
+        if not collection_name or "_" not in collection_name:
+            return None
+
+        parts = collection_name.split("_")
+
+        # Must have at least 2 parts and last part must be valid memory level
+        if len(parts) < 2 or parts[-1] not in ["concepts", "contexts", "episodes"]:
+            return None
+
+        # Rejoin all parts except the last one to get potential project_id
+        potential_project_id = "_".join(parts[:-1])
+
+        # Validate project ID format: must end with 8-character hex hash
+        if self._validate_project_id_format(potential_project_id):
+            return potential_project_id
+
+        return None
+
+    def _validate_project_id_format(self, project_id: str) -> bool:
+        """
+        Validate project ID format for security and consistency.
+
+        Expected format: {repo_name}_{hash8}
+        where hash8 is exactly 8 hexadecimal characters.
+
+        Args:
+            project_id: Project ID to validate
+
+        Returns:
+            True if project ID matches expected format
+        """
+        if not project_id or "_" not in project_id:
+            return False
+
+        # Split into parts and check last part is 8-char hex hash
+        parts = project_id.split("_")
+        if len(parts) < 2:
+            return False
+
+        # Last part must be exactly 8-character hexadecimal hash
+        hash_part = parts[-1]
+        if len(hash_part) != 8:
+            return False
+
+        # Validate hexadecimal format
+        try:
+            int(hash_part, 16)
+        except ValueError:
+            return False
+
+        # Validate repo_name part (everything except hash)
+        repo_name = "_".join(parts[:-1])
+        if not repo_name or len(repo_name) == 0:
+            return False
+
+        # Repo name should only contain alphanumeric and underscores (per config.py sanitization)
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_]+$", repo_name):
+            return False
+
+        return True
 
     @classmethod
     def delete_project_collections(cls, client: QdrantClient, project_id: str) -> bool:

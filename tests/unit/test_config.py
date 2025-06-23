@@ -3,10 +3,12 @@ Unit tests for configuration system with project support.
 """
 
 import os
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 
 from cognitive_memory.core.config import (
@@ -71,6 +73,139 @@ class TestProjectIdGeneration:
                 assert temp_path.name.replace("-", "_") in project_id
             finally:
                 os.chdir(old_cwd)
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/path/to/my_concepts",
+            "/path/to/something_episodes",
+            "/path/to/test_contexts",
+            "/path/to/concepts_project",
+            "/path/to/episodes_tracker",
+            "/path/to/contexts_manager",
+            "/path/to/cognitive_concepts",
+            "/path/to/memory_episodes",
+            "/path/to/user_contexts",
+        ],
+    )
+    def test_project_id_corner_cases_collection_names(self, path: str) -> None:
+        """Test project ID generation for projects with names that could create collection name ambiguity."""
+        project_id = get_project_id(path)
+
+        # Verify project ID format: {repo_name}_{hash8} where repo_name can contain underscores
+        parts = project_id.split("_")
+        assert len(parts) >= 2, f"Expected at least 2 parts for {path}, got {parts}"
+
+        # Last part should be 8-character hash
+        hash_part = parts[-1]
+        assert len(hash_part) == 8, (
+            f"Expected 8-character hash, got {len(hash_part)} for {hash_part}"
+        )
+        assert hash_part.isalnum(), f"Hash should be alphanumeric, got {hash_part}"
+
+        # Repo name is everything except the last part
+        repo_name = "_".join(parts[:-1])
+        expected_repo_name = Path(path).name
+        assert repo_name == expected_repo_name, (
+            f"Expected repo name {expected_repo_name}, got {repo_name}"
+        )
+
+        # Test that collections can be properly generated and parsed
+        potential_collections = [
+            f"{project_id}_concepts",
+            f"{project_id}_contexts",
+            f"{project_id}_episodes",
+        ]
+
+        # Verify each collection name can be unambiguously parsed back to project ID
+        for collection_name in potential_collections:
+            collection_parts = collection_name.split("_")
+            # Should have at least 3 parts: {...}_{hash8}_{memory_level}
+            assert len(collection_parts) >= 3, (
+                f"Collection {collection_name} has too few parts: {collection_parts}"
+            )
+            # Last part should be a valid memory level
+            assert collection_parts[-1] in ["concepts", "contexts", "episodes"], (
+                f"Invalid suffix in {collection_name}"
+            )
+            # Should be able to recover project ID by removing last part
+            recovered_project_id = "_".join(collection_parts[:-1])
+            assert recovered_project_id == project_id, (
+                f"Failed to recover project ID: {recovered_project_id} != {project_id}"
+            )
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/path/to/my_complex_project_concepts",
+            "/path/to/very_long_name_with_episodes",
+            "/path/to/under_score_heavy_contexts_app",
+            "/path/to/test_concepts_and_episodes_manager",
+        ],
+    )
+    def test_project_id_with_multiple_underscores(self, path: str) -> None:
+        """Test project ID generation for complex repo names with multiple underscores."""
+        project_id = get_project_id(path)
+
+        # Should still follow repo_name_hash8 format
+        parts = project_id.split("_")
+        assert len(parts) == 2, f"Expected exactly 2 parts, got {parts}"
+
+        # Last part should be 8-character hash
+        hash_part = parts[1]
+        assert len(hash_part) == 8, f"Expected 8-character hash, got {len(hash_part)}"
+        assert hash_part.isalnum(), f"Hash should be alphanumeric, got {hash_part}"
+
+        # First part should be the sanitized repo name
+        repo_name = Path(path).name
+        expected_repo_name = re.sub(r"[^a-zA-Z0-9]", "_", repo_name)
+        assert parts[0] == expected_repo_name, (
+            f"Expected {expected_repo_name}, got {parts[0]}"
+        )
+
+    def test_project_id_hash_like_name_collision(self) -> None:
+        """Test extremely tricky corner case: project name that looks like it contains a hash."""
+        # This is the worst case: a project name that looks like another project's ID
+        tricky_path = "/path/to/some_project_d1000486_concepts"
+        project_id = get_project_id(tricky_path)
+
+        # Project ID will be: some_project_d1000486_concepts_{actual_hash8}
+        parts = project_id.split("_")
+        assert len(parts) == 5, f"Expected 5 parts for tricky case, got {parts}"
+
+        # Verify the actual hash (last part) is 8 chars
+        actual_hash = parts[-1]
+        assert len(actual_hash) == 8, f"Hash should be 8 chars, got {len(actual_hash)}"
+        assert actual_hash.isalnum(), f"Hash should be alphanumeric, got {actual_hash}"
+
+        # Verify the hash is NOT "d1000486" (that's part of the repo name)
+        assert actual_hash != "d1000486", "Hash collision with repo name component"
+
+        # Test collection generation and parsing
+        collection_name = f"{project_id}_concepts"
+        # Should be: some_project_d1000486_concepts_{actual_hash}_concepts
+        collection_parts = collection_name.split("_")
+        assert collection_parts[-1] == "concepts", "Should end with concepts"
+
+        # Test recovery of project ID from collection name
+        recovered_project_id = "_".join(collection_parts[:-1])
+        assert recovered_project_id == project_id, (
+            f"Recovery failed: {recovered_project_id} != {project_id}"
+        )
+
+        # The critical test: ensure this doesn't get confused with a simpler project
+        # If there were a project at "/path/to/some_project" with hash "d1000486",
+        # its collection would be: some_project_d1000486_concepts
+        # Our collection is: some_project_d1000486_concepts_{actual_hash}_concepts
+        # These are clearly different and won't be confused
+
+        simple_project_collection = "some_project_d1000486_concepts"
+        assert collection_name != simple_project_collection, (
+            "Hash-like name created collision"
+        )
+        assert len(collection_name.split("_")) > len(
+            simple_project_collection.split("_")
+        ), "Should have more parts"
 
 
 class TestProjectConfigDetection:
