@@ -78,7 +78,7 @@ memory_system = "memory_system.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cognitive_memory*", "interfaces*", "memory_system*"]
+include = ["cognitive_memory*", "interfaces*", "memory_system*", "heimdall*"]
 
 [tool.setuptools]
 include-package-data = true
