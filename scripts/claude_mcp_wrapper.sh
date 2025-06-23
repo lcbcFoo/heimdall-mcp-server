@@ -1,9 +1,12 @@
 #!/bin/bash
 
-# Generate project hash and container name
-PROJECT_HASH=$(echo "$(pwd)" | sha256sum | cut -c1-8)
-REPO_NAME=$(basename "$(pwd)")
-CONTAINER_NAME="heimdall-$REPO_NAME-$PROJECT_HASH"
+# MCP wrapper for shared Qdrant architecture
+# Uses host-installed memory_system command instead of per-project containers
 
-# Run MCP server in container with clean stdio (all logs to /dev/null)
-exec docker exec -i "$CONTAINER_NAME" sh -c "memory_system serve mcp 2>/dev/null"
+# Run MCP server on host with clean stdio (all logs to /dev/null)
+if command -v memory_system >/dev/null 2>&1; then
+    exec memory_system serve mcp 2>/dev/null
+else
+    echo "Error: memory_system command not found. Please install heimdall-mcp package." >&2
+    exit 1
+fi

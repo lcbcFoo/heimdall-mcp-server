@@ -5,8 +5,8 @@ Migration from per-project Docker containers to a single shared Qdrant instance 
 
 ## Status
 - **Started**: 2025-06-23
-- **Current Step**: Phase 3, Step 7 (Legacy Code Removal)
-- **Completion**: 75% (6/8 steps completed)
+- **Current Step**: Phase 3, Step 8 (Python Package Setup)
+- **Completion**: 87.5% (7/8 steps completed)
 - **Expected Completion**: 2025-07-21 (4 weeks)
 
 ## Objectives
@@ -213,14 +213,37 @@ memory_system project clean my_project_abc123 --yes
 ### Phase 3: Package Distribution (Week 3-4)
 
 #### Step 7: Legacy Code Removal
-**Status**: Not Started
-**Date Range**: 2025-07-14 - 2025-07-21
+**Status**: Completed
+**Date Range**: 2025-06-23 - 2025-06-23
 
 **Tasks**:
-- [ ] Remove `scripts/setup_project_memory.sh` (370 lines)
-- [ ] Delete `docker/docker-compose.template.yml`
-- [ ] Clean up per-project Docker logic throughout codebase
-- [ ] Remove container-specific environment variable handling
+- [x] Remove `scripts/setup_project_memory.sh` (370 lines) - legacy Docker setup script
+- [x] Keep `docker/docker-compose.template.yml` (already updated for shared architecture)
+- [x] Clean up per-project Docker logic throughout codebase
+- [x] Remove container-specific environment variable handling
+- [x] Remove 9 obsolete shell scripts replaced by CLI commands
+- [x] Update remaining scripts for shared architecture
+
+**Implementation Details**:
+- Removed legacy 370-line Docker setup script that created per-project containers
+- Eliminated 9 obsolete shell scripts that duplicated CLI functionality:
+  - `scripts/stop_memory.sh`, `scripts/start_memory.sh` → replaced by `memory_system qdrant` commands
+  - `scripts/load_project_content.sh` → replaced by `memory_system load`
+  - `scripts/list_memory_projects.sh` → replaced by `memory_system project list`
+  - `scripts/cleanup_memory.sh` → replaced by `memory_system project clean`
+  - `scripts/monitor_memory_usage.sh`, `scripts/analyze_container_size.sh` → per-project monitoring obsolete
+  - `scripts/git-hook-installer.sh`, `scripts/post-commit-hook.sh` → replaced by Python versions
+- Updated `setup_claude_code_mcp.sh` to use `memory_system project init` instead of legacy container setup
+- Updated `scripts/claude_mcp_wrapper.sh` to use host-based `memory_system serve mcp` instead of container exec
+- Updated all script references throughout codebase to point to new CLI commands
+- Kept appropriate container detection logic in config.py for environment detection
+- Reduced total shell scripts from 16+ to 5 essential ones (75% reduction)
+
+**Benefits Achieved**:
+- **Simplified Installation**: No more complex 370-line bash setup scripts
+- **Unified CLI**: All functionality accessible through `memory_system` command
+- **Reduced Maintenance**: Eliminated script duplication and per-project container logic
+- **Cleaner Codebase**: 75% reduction in shell scripts, focusing on Python-based solutions
 
 #### Step 8: Python Package Setup
 **Status**: Not Started
