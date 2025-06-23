@@ -53,6 +53,173 @@ def get_project_id(path: str | Path | None = None) -> str:
     return f"{repo_name}_{path_hash}"
 
 
+@dataclass
+class ProjectPaths:
+    """Project-specific file paths for monitoring service."""
+
+    def __init__(self, project_root: Path | None = None):
+        """
+        Initialize project paths.
+
+        Args:
+            project_root: Root directory of the project. If None, uses current working directory.
+        """
+        self.project_root = project_root or Path.cwd()
+        self.heimdall_dir = self.project_root / ".heimdall"
+        self.config_file = self.heimdall_dir / "config.yaml"
+        self.pid_file = self.heimdall_dir / "monitor.pid"
+        self.log_file = self.heimdall_dir / "monitor.log"
+
+        # Ensure .heimdall directory exists
+        self.heimdall_dir.mkdir(exist_ok=True)
+
+    def cleanup_stale_pid(self) -> bool:
+        """
+        Clean up stale PID file if process is no longer running.
+
+        Returns:
+            True if PID file was stale and removed, False otherwise
+        """
+        if not self.pid_file.exists():
+            return False
+
+        try:
+            import psutil
+
+            pid = int(self.pid_file.read_text().strip())
+            if not psutil.pid_exists(pid):
+                logger.info(f"Removing stale PID file for non-existent process {pid}")
+                self.pid_file.unlink()
+                return True
+        except (ValueError, PermissionError, ImportError) as e:
+            logger.warning(f"Error checking PID file: {e}")
+            # Remove corrupted PID file
+            try:
+                self.pid_file.unlink()
+                return True
+            except PermissionError:
+                pass
+
+        return False
+
+
+def get_project_paths(project_root: Path | None = None) -> ProjectPaths:
+    """
+    Get standardized project paths.
+
+    Args:
+        project_root: Root directory of the project. If None, uses current working directory.
+
+    Returns:
+        ProjectPaths: Object containing all project-specific paths
+    """
+    return ProjectPaths(project_root)
+
+
+def get_monitoring_target_path(project_root: Path | None = None) -> str:
+    """
+    Get monitoring target path from various sources with centralized priority logic.
+
+    Priority order:
+    1. MONITORING_TARGET_PATH environment variable (highest priority - CLI override)
+    2. .heimdall/config.yaml monitoring.target_path
+    3. Default to ./docs relative to project root
+
+    Args:
+        project_root: Root directory of the project. If None, uses current working directory.
+
+    Returns:
+        str: Absolute path to monitor
+    """
+    paths = get_project_paths(project_root)
+
+    # Environment variable takes highest priority (for CLI override)
+    env_target = os.getenv("MONITORING_TARGET_PATH")
+    if env_target:
+        return str(Path(env_target).resolve())
+
+    # Check .heimdall/config.yaml
+    if paths.config_file.exists():
+        try:
+            config_data = yaml.safe_load(paths.config_file.read_text())
+            if config_data and isinstance(config_data, dict):
+                monitoring = config_data.get("monitoring", {})
+                if isinstance(monitoring, dict) and "target_path" in monitoring:
+                    target_path = monitoring["target_path"]
+                    if not os.path.isabs(target_path):
+                        # Resolve relative paths against project root
+                        target_path = str((paths.project_root / target_path).resolve())
+                    return str(target_path)
+        except Exception as e:
+            logger.warning(f"Failed to parse .heimdall/config.yaml: {e}")
+
+    # Default fallback
+    return str((paths.project_root / "docs").resolve())
+
+
+def get_monitoring_config(project_root: Path | None = None) -> dict[str, Any]:
+    """
+    Get comprehensive monitoring configuration with centralized logic.
+
+    Args:
+        project_root: Root directory of the project. If None, uses current working directory.
+
+    Returns:
+        dict: Monitoring configuration with target_path, interval_seconds, ignore_patterns
+    """
+    paths = get_project_paths(project_root)
+
+    # Default configuration
+    config = {
+        "target_path": get_monitoring_target_path(project_root),
+        "interval_seconds": 5.0,
+        "ignore_patterns": [".git", "node_modules", "__pycache__", ".pytest_cache"],
+    }
+
+    # Environment overrides (highest priority)
+    env_interval = os.getenv("MONITORING_INTERVAL_SECONDS")
+    if env_interval:
+        try:
+            config["interval_seconds"] = float(env_interval)
+        except (ValueError, TypeError):
+            logger.warning("Invalid MONITORING_INTERVAL_SECONDS value, using default")
+
+    env_patterns = os.getenv("MONITORING_IGNORE_PATTERNS")
+    if env_patterns:
+        config["ignore_patterns"] = [p.strip() for p in env_patterns.split(",")]
+
+    # Check .heimdall/config.yaml for additional settings
+    if paths.config_file.exists():
+        try:
+            config_data = yaml.safe_load(paths.config_file.read_text())
+            if config_data and isinstance(config_data, dict):
+                monitoring = config_data.get("monitoring", {})
+                if isinstance(monitoring, dict):
+                    # Only override if not already set by environment
+                    if "interval_seconds" in monitoring and not os.getenv(
+                        "MONITORING_INTERVAL_SECONDS"
+                    ):
+                        try:
+                            config["interval_seconds"] = float(
+                                monitoring["interval_seconds"]
+                            )
+                        except (ValueError, TypeError):
+                            logger.warning("Invalid interval_seconds in config.yaml")
+
+                    if "ignore_patterns" in monitoring and not os.getenv(
+                        "MONITORING_IGNORE_PATTERNS"
+                    ):
+                        patterns = monitoring["ignore_patterns"]
+                        if isinstance(patterns, list):
+                            config["ignore_patterns"] = patterns
+        except Exception as e:
+            logger.warning(
+                f"Failed to parse monitoring config from .heimdall/config.yaml: {e}"
+            )
+
+    return config
+
+
 def detect_container_environment() -> bool:
     """
     Detect if running inside a container environment.

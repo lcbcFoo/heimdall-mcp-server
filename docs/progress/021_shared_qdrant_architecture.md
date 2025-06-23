@@ -5,13 +5,13 @@ Migration from per-project Docker containers to a single shared Qdrant instance 
 
 ## Status
 - **Started**: 2025-06-23
-- **Current Step**: Phase 1, Step 3 (Service Manager Updates)
-- **Completion**: 25% (2/8 steps completed)
+- **Current Step**: Phase 2, Step 5 (Git Hook Migration)
+- **Completion**: 50% (4/8 steps completed)
 - **Expected Completion**: 2025-07-21 (4 weeks)
 
 ## Objectives
 - [ ] Implement shared Qdrant architecture with project-scoped collections
-- [ ] Migrate file monitoring from container-based to host-based daemon
+- [ ] Refactor file monitoring service to eliminate container dependencies
 - [ ] Update git hooks to use host CLI instead of container exec
 - [ ] Create project management CLI commands
 - [ ] Package as standard Python distribution
@@ -63,27 +63,57 @@ Migration from per-project Docker containers to a single shared Qdrant instance 
 - All tests passing, ensuring project isolation and proper collection naming
 
 #### Step 3: Service Manager Updates
-**Status**: Not Started
-**Date Range**: 2025-06-26 - 2025-07-01
+**Status**: Completed
+**Date Range**: 2025-06-23 - 2025-06-23
 
 **Tasks**:
-- [ ] Modify `memory_system/service_manager.py` for single shared Qdrant
-- [ ] Create simplified docker-compose.yml for shared instance
-- [ ] Remove per-project Docker container logic
-- [ ] Add shared Qdrant health checks
+- [x] Modify `memory_system/service_manager.py` for single shared Qdrant
+- [x] Create simplified docker-compose.yml for shared instance
+- [x] Remove per-project Docker container logic
+- [x] Add shared Qdrant health checks
+
+**Implementation Details**:
+- Updated `QdrantManager` to use fixed container name `heimdall-shared-qdrant` instead of project-specific names
+- Simplified `docker-compose.template.yml` from 109 to 35 lines, removing variable substitution complexity
+- Implemented `_start_docker_shared()` method using docker-compose for service management
+- Added `_cleanup_legacy_containers()` to automatically remove old project-specific containers
+- Standardized on fixed port 6333 for shared instance instead of dynamic project-based ports
+- Updated status checking and health monitoring to work with shared architecture
+- Maintained full CLI compatibility - all `memory_system qdrant` commands work unchanged
 
 ### Phase 2: Feature Migration (Week 2-3)
 
-#### Step 4: Host-based File Monitoring
-**Status**: Not Started
-**Date Range**: 2025-06-30 - 2025-07-07
+#### Step 4: Host-based File Monitoring Migration
+**Status**: Completed
+**Date Range**: 2025-06-23 - 2025-06-23
+
+**Design Decision**: Instead of creating parallel `host_monitoring.py`, refactor existing `monitoring_service.py` to eliminate container dependencies while maintaining CLI compatibility.
 
 **Tasks**:
-- [ ] Create `memory_system/host_monitoring.py` with host-based daemon
-- [ ] Replace container environment variables with `.heimdall/config.yaml`
-- [ ] Implement project-local PID files (`.heimdall/monitor.pid`)
-- [ ] Add multi-project PID collision prevention
-- [ ] Update CLI commands for PID-based supervision
+- [x] Refactor `memory_system/monitoring_service.py` to remove Docker container dependencies
+- [x] Replace container environment variables with `.heimdall/config.yaml` configuration loading
+- [x] Implement project-local PID files (`.heimdall/monitor.pid`) instead of container-based process management
+- [x] Add multi-project PID collision prevention in existing service
+- [x] Keep existing CLI interface (`memory_system monitor`) with minimal changes, just improving commands to be clear about the monitoring service
+- [x] Remove `memory_system/host_monitoring.py` (created prematurely, causes code duplication)
+
+**Implementation Details**:
+- Refactored `MonitoringService.__init__()` to accept `project_root` parameter and use centralized configuration
+- Updated configuration to use `get_project_paths()` and `get_monitoring_config()` from `cognitive_memory/core/config.py`
+- Replaced hardcoded `/tmp/monitoring.pid` with project-local `.heimdall/monitor.pid` files
+- Added automatic stale PID cleanup using `ProjectPaths.cleanup_stale_pid()` method
+- Updated all PID file operations to use project-specific paths preventing multi-project collisions
+- Modified CLI interface to accept optional `--project-root` parameter while maintaining backward compatibility
+- Updated module docstring and class descriptions to reflect host-based (not container-based) architecture
+- Integrated with centralized monitoring configuration priority logic (env vars > config file > defaults)
+- Maintained all existing CLI commands (`memory_system monitor start/stop/restart/status/health`) with identical behavior
+
+**Rationale**:
+- Maintains backward compatibility and familiar CLI interface
+- Eliminates code duplication between two monitoring services
+- Provides seamless upgrade path for existing users
+- Follows single responsibility principle with one monitoring service
+- Enables true multi-project isolation without container overhead
 
 #### Step 5: Git Hook Migration
 **Status**: Not Started
@@ -139,7 +169,7 @@ Migration from per-project Docker containers to a single shared Qdrant instance 
 - **Project Identification**: `{repo_name}_{hash8}` from absolute path
 - **Collection Naming**: `{project_id}_{memory_level}` for hierarchical isolation
 - **Configuration**: `.heimdall/config.yaml` per project with shared global defaults
-- **Process Management**: Host-based daemons with project-local PID files
+- **Process Management**: Refactored monitoring service with project-local PID files
 
 ### User Workflow
 ```bash
@@ -161,11 +191,12 @@ cognitive-cli load .
 ### Risks
 - **Data Migration**: Existing projects lose memory data
 - **Configuration Complexity**: Multiple config sources (env vars + files)
-- **Process Management**: Host daemons more complex than container lifecycle
+- **Service Refactoring**: Breaking changes to monitoring service internal architecture
 
 ### Mitigation
 - **Fresh Start Approach**: No backward compatibility required, clean slate
 - **Configuration Hierarchy**: Clear precedence order (CLI > env > config file > defaults)
+- **Backward Compatible Refactoring**: Maintain existing CLI interface while updating internal implementation
 - **Robust PID Management**: Proper cleanup, collision detection, health checks
 
 ## Resources
@@ -177,3 +208,5 @@ cognitive-cli load .
 ## Change Log
 - **2025-06-23**: Initial milestone creation and task breakdown
 - **2025-06-23**: Completed Phase 1, Step 2 (Project-Scoped Collections) - Implemented project-isolated collection naming with comprehensive testing
+- **2025-06-23**: Completed Phase 1, Step 3 (Service Manager Updates) - Implemented shared Qdrant architecture with legacy container cleanup
+- **2025-06-23**: Updated Step 4 approach - Refactor existing monitoring service instead of creating parallel implementation to avoid code duplication and maintain CLI compatibility

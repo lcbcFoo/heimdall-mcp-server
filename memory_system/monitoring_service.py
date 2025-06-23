@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Production monitoring service for containerized deployments.
+Host-based monitoring service for cognitive memory system.
 
-This module provides a production-ready monitoring service that runs as a daemon
-within the heimdall-mcp container, automatically detecting file changes and
-synchronizing memories. Designed for reliability, observability, and container orchestration.
+This module provides a production-ready monitoring service that runs as a host process
+with project-local PID files, automatically detecting file changes and
+synchronizing memories. Designed for reliability, observability, and multi-project support.
 """
 
 import argparse
@@ -19,7 +19,12 @@ from typing import Any
 import psutil
 from loguru import logger
 
-from cognitive_memory.core.config import CognitiveConfig, detect_container_environment
+from cognitive_memory.core.config import (
+    SystemConfig,
+    detect_container_environment,
+    get_monitoring_config,
+    get_project_paths,
+)
 from cognitive_memory.core.interfaces import CognitiveSystem
 from cognitive_memory.main import initialize_system
 from cognitive_memory.monitoring import (
@@ -93,26 +98,35 @@ class ServiceStatus:
 
 class MonitoringService:
     """
-    Production monitoring service for containerized deployments.
+    Host-based monitoring service for cognitive memory system.
 
-    Provides automatic file monitoring with container-native service management,
+    Provides automatic file monitoring with project-local PID management,
     including daemon mode, health checks, error recovery, and production logging.
+    Uses .heimdall/config.yaml for configuration instead of container environment variables.
     """
 
-    PID_FILE = "/tmp/monitoring.pid"
+    # PID_FILE now determined per-project
     SOCKET_PATH = "/tmp/monitoring.sock"
     MAX_RESTART_ATTEMPTS = 5
     RESTART_BACKOFF_BASE = 1.0  # seconds
     RESTART_BACKOFF_MAX = 60.0  # seconds
 
-    def __init__(self, config: CognitiveConfig | None = None):
+    def __init__(self, project_root: str | None = None):
         """
         Initialize monitoring service.
 
         Args:
-            config: Optional cognitive configuration, defaults to environment-based config
+            project_root: Optional project root directory, defaults to current working directory
         """
-        self.config = config or CognitiveConfig.from_env()
+        # Get project paths and configuration
+        self.project_paths = get_project_paths(
+            Path(project_root) if project_root else None
+        )
+        self.monitoring_config = get_monitoring_config(self.project_paths.project_root)
+
+        # Load full system config for cognitive parameters
+        system_config = SystemConfig.from_env()
+        self.config = system_config.cognitive
         self.status = ServiceStatus()
         self.cognitive_system: CognitiveSystem | None = None
         self.file_monitor: MarkdownFileMonitor | None = None
@@ -122,6 +136,9 @@ class MonitoringService:
 
         # Validate configuration
         self._validate_configuration()
+
+        # Clean up any stale PID files
+        self.project_paths.cleanup_stale_pid()
 
         # Detect container environment for health check behavior
         self._is_container = detect_container_environment()
@@ -133,13 +150,8 @@ class MonitoringService:
         if not self.config.monitoring_enabled:
             raise MonitoringServiceError("Monitoring is disabled in configuration")
 
-        # Check target path
-        target_path = os.getenv("MONITORING_TARGET_PATH")
-        if not target_path:
-            raise MonitoringServiceError(
-                "MONITORING_TARGET_PATH environment variable not set"
-            )
-
+        # Check target path from centralized configuration
+        target_path = self.monitoring_config["target_path"]
         target_path_obj = Path(target_path)
         if not target_path_obj.exists():
             raise MonitoringServiceError(f"Target path does not exist: {target_path}")
@@ -168,7 +180,7 @@ class MonitoringService:
             True if service started successfully, False otherwise
         """
         try:
-            # Check if already running
+            # Check if already running using project-local PID
             if self._is_service_running():
                 logger.warning("Monitoring service is already running")
                 return False
@@ -194,7 +206,7 @@ class MonitoringService:
             self.status.is_running = True
             self.status.restart_count = self._restart_attempts
 
-            # Write PID file
+            # Write project-local PID file
             self._write_pid_file()
 
             logger.info(
@@ -231,7 +243,7 @@ class MonitoringService:
             # Update status
             self.status.is_running = False
 
-            # Remove PID file
+            # Remove project-local PID file
             self._remove_pid_file()
 
             logger.info("Monitoring service stopped successfully")
@@ -331,8 +343,8 @@ class MonitoringService:
                         }
                     )
 
-            # Check PID file
-            if not Path(self.PID_FILE).exists():
+            # Check project-local PID file
+            if not self.project_paths.pid_file.exists():
                 health["status"] = "unhealthy"
                 health["checks"].append(
                     {
@@ -452,15 +464,13 @@ class MonitoringService:
         try:
             logger.info("Initializing monitoring components...")
 
-            # Get target path from environment
-            target_path = os.getenv("MONITORING_TARGET_PATH")
-            if not target_path:
-                raise MonitoringServiceError("MONITORING_TARGET_PATH not set")
+            # Get target path from centralized configuration
+            target_path = self.monitoring_config["target_path"]
 
-            # Create file monitor
+            # Create file monitor using centralized config
             self.file_monitor = MarkdownFileMonitor(
-                polling_interval=self.config.monitoring_interval_seconds,
-                ignore_patterns=self.config.monitoring_ignore_patterns,
+                polling_interval=self.monitoring_config["interval_seconds"],
+                ignore_patterns=set(self.monitoring_config["ignore_patterns"]),
             )
 
             # Add target path to monitoring
@@ -581,8 +591,8 @@ class MonitoringService:
         return self.restart()
 
     def _is_service_running(self) -> bool:
-        """Check if monitoring service is already running."""
-        pid_file = Path(self.PID_FILE)
+        """Check if monitoring service is already running using project-local PID."""
+        pid_file = self.project_paths.pid_file
         if not pid_file.exists():
             return False
 
@@ -597,19 +607,19 @@ class MonitoringService:
             return False
 
     def _write_pid_file(self) -> None:
-        """Write PID file for service tracking."""
+        """Write project-local PID file for service tracking."""
         try:
-            with open(self.PID_FILE, "w") as f:
+            with open(self.project_paths.pid_file, "w") as f:
                 f.write(str(os.getpid()))
-            logger.debug(f"PID file written: {self.PID_FILE}")
+            logger.debug(f"PID file written: {self.project_paths.pid_file}")
         except Exception as e:
             logger.warning(f"Failed to write PID file: {e}")
 
     def _remove_pid_file(self) -> None:
-        """Remove PID file on service shutdown."""
+        """Remove project-local PID file on service shutdown."""
         try:
-            Path(self.PID_FILE).unlink(missing_ok=True)
-            logger.debug(f"PID file removed: {self.PID_FILE}")
+            self.project_paths.pid_file.unlink(missing_ok=True)
+            logger.debug(f"PID file removed: {self.project_paths.pid_file}")
         except Exception as e:
             logger.warning(f"Failed to remove PID file: {e}")
 
@@ -617,7 +627,7 @@ class MonitoringService:
 def main() -> int:
     """Main entry point for monitoring service CLI."""
     parser = argparse.ArgumentParser(
-        description="Production monitoring service for cognitive memory system"
+        description="Host-based monitoring service for cognitive memory system"
     )
     parser.add_argument("--start", action="store_true", help="Start monitoring service")
     parser.add_argument("--stop", action="store_true", help="Stop monitoring service")
@@ -628,11 +638,16 @@ def main() -> int:
     parser.add_argument("--health", action="store_true", help="Perform health check")
     parser.add_argument("--daemon", action="store_true", help="Run in daemon mode")
     parser.add_argument("--json", action="store_true", help="Output in JSON format")
+    parser.add_argument(
+        "--project-root",
+        type=str,
+        help="Project root directory (defaults to current directory)",
+    )
 
     args = parser.parse_args()
 
     try:
-        service = MonitoringService()
+        service = MonitoringService(project_root=args.project_root)
 
         if args.start:
             success = service.start(daemon_mode=args.daemon)

@@ -523,17 +523,18 @@ def monitor_start(
     target_path: str | None = typer.Argument(None, help="Directory to monitor"),
     daemon: bool = typer.Option(False, "--daemon", help="Run in daemon mode"),
     interval: float = typer.Option(5.0, help="Polling interval in seconds"),
+    project_root: str | None = typer.Option(None, help="Project root directory"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ) -> None:
     """Start file monitoring service."""
     try:
         from .monitoring_service import MonitoringService, MonitoringServiceError
 
-        # Set target path if provided
+        # Set target path if provided (for backward compatibility with env var)
         if target_path:
             os.environ["MONITORING_TARGET_PATH"] = str(Path(target_path).resolve())
 
-        # Set interval if provided
+        # Set interval if provided (for backward compatibility with env var)
         if interval != 5.0:
             os.environ["MONITORING_INTERVAL_SECONDS"] = str(interval)
 
@@ -546,7 +547,7 @@ def monitor_start(
         ) as progress:
             task = progress.add_task("Starting monitoring service...", total=None)
 
-            service = MonitoringService()
+            service = MonitoringService(project_root=project_root)
             success = service.start(daemon_mode=daemon)
 
             if success:
@@ -584,6 +585,7 @@ def monitor_start(
 
 @monitor_app.command("stop")  # type: ignore[misc]
 def monitor_stop(
+    project_root: str | None = typer.Option(None, help="Project root directory"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ) -> None:
     """Stop file monitoring service."""
@@ -599,7 +601,7 @@ def monitor_stop(
         ) as progress:
             task = progress.add_task("Stopping monitoring service...", total=None)
 
-            service = MonitoringService()
+            service = MonitoringService(project_root=project_root)
             success = service.stop()
 
             if success:
@@ -628,6 +630,7 @@ def monitor_stop(
 
 @monitor_app.command("restart")  # type: ignore[misc]
 def monitor_restart(
+    project_root: str | None = typer.Option(None, help="Project root directory"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ) -> None:
     """Restart file monitoring service."""
@@ -643,7 +646,7 @@ def monitor_restart(
         ) as progress:
             task = progress.add_task("Restarting monitoring service...", total=None)
 
-            service = MonitoringService()
+            service = MonitoringService(project_root=project_root)
             success = service.restart()
 
             if success:
@@ -674,6 +677,7 @@ def monitor_restart(
 
 @monitor_app.command("status")  # type: ignore[misc]
 def monitor_status(
+    project_root: str | None = typer.Option(None, help="Project root directory"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
     detailed: bool = typer.Option(
         False, "--detailed", help="Show detailed status information"
@@ -683,7 +687,7 @@ def monitor_status(
     try:
         from .monitoring_service import MonitoringService, MonitoringServiceError
 
-        service = MonitoringService()
+        service = MonitoringService(project_root=project_root)
         status = service.get_status()
 
         if json_output:
@@ -732,10 +736,20 @@ def monitor_status(
 
         console.print(status_table)
 
-        # Target path information
-        target_path = os.getenv("MONITORING_TARGET_PATH")
-        if target_path:
+        # Target path information from centralized config
+        try:
+            from pathlib import Path
+
+            from cognitive_memory.core.config import get_monitoring_config
+
+            config = get_monitoring_config(Path(project_root) if project_root else None)
+            target_path = config["target_path"]
             console.print(f"\n📁 Target Path: {target_path}")
+        except Exception:
+            # Fallback to environment variable for backward compatibility
+            target_path = os.getenv("MONITORING_TARGET_PATH")
+            if target_path:
+                console.print(f"\n📁 Target Path: {target_path}")
 
     except MonitoringServiceError as e:
         console.print(f"❌ Monitoring service error: {e}", style="bold red")
@@ -747,13 +761,14 @@ def monitor_status(
 
 @monitor_app.command("health")  # type: ignore[misc]
 def monitor_health(
+    project_root: str | None = typer.Option(None, help="Project root directory"),
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ) -> None:
     """Perform monitoring service health check."""
     try:
         from .monitoring_service import MonitoringService, MonitoringServiceError
 
-        service = MonitoringService()
+        service = MonitoringService(project_root=project_root)
         health = service.health_check()
 
         if json_output:

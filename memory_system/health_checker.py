@@ -606,7 +606,7 @@ class HealthChecker:
                         try:
                             from .monitoring_service import MonitoringService
 
-                            service = MonitoringService(config)
+                            service = MonitoringService()
 
                             # Try to restart the service
                             success = service.restart()
