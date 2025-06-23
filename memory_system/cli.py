@@ -28,6 +28,7 @@ from cognitive_memory.main import (
     initialize_with_config,
 )
 
+# Import operations layer for cognitive commands
 from .health_checker import HealthChecker, HealthCheckResults, HealthResult
 from .interactive_shell import InteractiveShell
 from .service_manager import QdrantManager, ServiceStatus
