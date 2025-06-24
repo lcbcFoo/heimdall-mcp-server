@@ -8,7 +8,10 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from memory_system.monitoring_service import MonitoringService, MonitoringServiceError
+from heimdall.cognitive_system.monitoring_service import (
+    MonitoringService,
+    MonitoringServiceError,
+)
 
 console = Console()
 

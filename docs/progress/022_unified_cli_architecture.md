@@ -5,8 +5,8 @@ Consolidate the cognitive memory system's fragmented command-line interfaces int
 
 ## Status
 - **Started**: 2025-06-23
-- **Current Step**: Phase 3 Complete - Ready for Phase 4
-- **Completion**: 43% (3/7 phases complete)
+- **Current Step**: Phase 5 Complete - Ready for Phase 6
+- **Completion**: 71% (5/7 phases complete)
 - **Expected Completion**: 2025-06-27
 
 ## Objectives
@@ -173,38 +173,81 @@ class HeimdallMCPServer:
 - **Phase 3 Complete** - Ready to proceed to Phase 4 (Interactive Shell Update)
 
 ### Step 4: Update Interactive Shell
-**Status**: Not Started
-**Date Range**: 2025-06-25 - 2025-06-26
+**Status**: ✅ COMPLETED
+**Date Range**: 2025-06-24 - 2025-06-24
 
 #### Tasks Completed
-- None yet
+- ✅ Moved `memory_system/interactive_shell.py` to `heimdall/interactive_shell.py`
+- ✅ Moved `memory_system/display_utils.py` to `heimdall/display_utils.py`
+- ✅ Updated imports to use operations layer directly (`CognitiveOperations`)
+- ✅ Replaced all CognitiveCLI delegation with direct operations calls
+- ✅ Implemented rich formatting for structured data returned by operations layer
+- ✅ Added new formatting methods: `_format_memories_from_data()` and `_format_bridges_from_data()`
+- ✅ Updated all interactive commands to use operations layer: store, retrieve, discover_bridges, show_status, consolidate_memories, load_memories, load_git_patterns
+- ✅ Updated health commands import to reference new location
+- ✅ Maintained command completion and help systems compatibility
+- ✅ Tested interactive shell imports and class definitions successfully
+
+#### Key Accomplishments
+- **Direct Operations Integration**: Interactive shell now uses operations layer directly, eliminating CognitiveCLI dependency
+- **Enhanced Data Formatting**: Added structured data formatting methods that handle operations layer response format
+- **Rich Terminal Output**: Maintained all rich formatting capabilities with panels, tables, and colors
+- **Improved Error Handling**: Enhanced error reporting using structured error responses from operations layer
+- **File Organization**: Moved files to unified heimdall directory structure
+- **Backward Compatibility**: Maintained all existing command functionality while using new architecture
+
+#### Architecture Changes
+```python
+# Before: CognitiveCLI delegation
+self.cognitive_system.store_experience(text)
+cli = CognitiveCLI(self.cognitive_system)
+cli.load_memories(file_path)
+
+# After: Direct operations layer usage
+result = self.operations.store_experience(text)
+result = self.operations.load_memories(source_path=file_path)
+```
 
 #### Current Work
-- Waiting for Step 1-3 completion
-
-#### Next Tasks
-- Update `heimdall/interactive_shell.py` imports
-- Replace CognitiveCLI delegation with direct operations calls
-- Implement rich formatting for structured data with panels and colors
-- Update command completion and help systems
-- Test interactive shell with new operations layer
+- **Phase 4 Complete** - Ready to proceed to Phase 5 (Restructure and Create Final Entry Points)
 
 ### Step 5: Restructure and Create Final Entry Points
-**Status**: Not Started
-**Date Range**: 2025-06-26 - 2025-06-26
+**Status**: ✅ COMPLETED
+**Date Range**: 2025-06-24 - 2025-06-24
 
 #### Tasks Completed
-- None yet
+- ✅ Analyzed current directory structure and identified files to migrate
+- ✅ Created `heimdall/cognitive_system/` subdirectory for service management utilities
+- ✅ Moved memory_system files to `heimdall/cognitive_system/` using `git mv` for proper tracking:
+  - `service_manager.py` - Docker/Qdrant service management
+  - `monitoring_service.py` - Automatic file monitoring service
+  - `health_checker.py` - System health validation
+  - `service_health.py` - Health check system for monitoring
+- ✅ Updated `pyproject.toml` console script entries:
+  - `heimdall = "heimdall.cli:main"` - Unified CLI entry point
+  - `heimdall-mcp = "heimdall.mcp_server:main"` - Standalone MCP server
+- ✅ Updated all import statements throughout codebase:
+  - Fixed imports in `heimdall/cli_commands/` (5 files updated)
+  - Fixed imports in `heimdall/mcp_server.py`
+  - Fixed imports in test files (2 files updated)
+  - Fixed imports in legacy interfaces (3 files updated)
+  - Fixed imports in `scripts/release.py`
+- ✅ Removed `memory_system/` directory after successful migration
+- ✅ Removed MCP wrapper script (`scripts/claude_mcp_wrapper.sh`)
+- ✅ Updated core documentation files:
+  - `CLAUDE.md` - Updated file structure and command examples
+  - `docs/arch-docs/architecture-technical-specification.md` - Updated CLI examples and architecture diagrams
+
+#### Key Accomplishments
+- **Clean Migration**: Successfully moved service utilities to organized `heimdall/cognitive_system/` structure
+- **Proper Git Tracking**: Used `git mv` to maintain file history and change tracking
+- **Complete Import Updates**: All import statements updated to reference new locations
+- **Documentation Sync**: Core documentation updated to reflect new unified CLI structure
+- **Entry Point Consolidation**: Simplified from 2 legacy commands to 2 unified commands (`heimdall` + `heimdall-mcp`)
+- **Backwards Compatibility**: Legacy interfaces preserved for gradual migration
 
 #### Current Work
-- Waiting for Step 1-4 completion
-
-#### Next Tasks
-- Remove `memory_system/` directory in favor to `heimdall/`
-- Update `pyproject.toml` console script entries for `heimdall` and `heimdall-mcp`
-- Update all import statements throughout codebase
-- Update documentation and help text references
-- Remove MCP wrapper script (`scripts/claude_mcp_wrapper.sh`)
+- **Phase 5 Complete** - Ready to proceed to Phase 6 (Remove Redundant Code)
 
 ### Step 6: Remove Redundant Code
 **Status**: Not Started

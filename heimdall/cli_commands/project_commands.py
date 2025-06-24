@@ -29,7 +29,7 @@ def project_init(
             get_project_id,
         )
         from cognitive_memory.storage.qdrant_storage import create_hierarchical_storage
-        from memory_system.service_manager import QdrantManager
+        from heimdall.cognitive_system.service_manager import QdrantManager
 
         # Determine project root and generate project ID
         if project_root:
@@ -220,7 +220,7 @@ def project_list(
         from qdrant_client import QdrantClient
 
         from cognitive_memory.core.config import QdrantConfig
-        from memory_system.service_manager import QdrantManager
+        from heimdall.cognitive_system.service_manager import QdrantManager
 
         # Check Qdrant status
         manager = QdrantManager()
@@ -352,7 +352,7 @@ def project_clean(
         from qdrant_client import QdrantClient
 
         from cognitive_memory.core.config import QdrantConfig
-        from memory_system.service_manager import QdrantManager
+        from heimdall.cognitive_system.service_manager import QdrantManager
 
         # Check Qdrant status
         manager = QdrantManager()

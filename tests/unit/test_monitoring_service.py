@@ -19,7 +19,7 @@ from cognitive_memory.monitoring import (
     ChangeType,
     FileChangeEvent,
 )
-from memory_system.monitoring_service import (
+from heimdall.cognitive_system.monitoring_service import (
     MonitoringService,
     MonitoringServiceError,
     ServiceStatus,

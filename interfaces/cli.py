@@ -20,7 +20,7 @@ from cognitive_memory.main import (
     initialize_system,
     initialize_with_config,
 )
-from memory_system.display_utils import format_source_info
+from heimdall.display_utils import format_source_info
 
 
 class CognitiveCLI:

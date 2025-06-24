@@ -30,8 +30,8 @@ from starlette.routing import Route
 from cognitive_memory.core.interfaces import CognitiveSystem
 from cognitive_memory.core.version import get_version_info
 from cognitive_memory.main import initialize_system, initialize_with_config
+from heimdall.display_utils import format_source_info
 from interfaces.cli import CognitiveCLI
-from memory_system.display_utils import format_source_info
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

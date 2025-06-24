@@ -14,7 +14,10 @@ from unittest.mock import Mock, patch
 import pytest
 
 from cognitive_memory.core.config import CognitiveConfig
-from memory_system.monitoring_service import MonitoringService, MonitoringServiceError
+from heimdall.cognitive_system.monitoring_service import (
+    MonitoringService,
+    MonitoringServiceError,
+)
 
 
 class TestContainerEnvironmentIntegration:

@@ -73,8 +73,8 @@ test = [
 ]
 
 [project.scripts]
-cognitive-cli = "interfaces.cli:main"
-memory_system = "memory_system.cli:main"
+heimdall = "heimdall.cli:main"
+heimdall-mcp = "heimdall.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

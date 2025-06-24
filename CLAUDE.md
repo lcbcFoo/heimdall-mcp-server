@@ -68,47 +68,69 @@ cognitive_memory/
         ├── connection_extractor.py # Relationship analysis
         └── chunk_processor.py     # Document chunking and grouping
 
-interfaces/
-├── cli.py                 # CognitiveCLI - main CLI interface
-├── mcp_server.py         # MCP protocol server
-└── mcp_tools/            # Individual MCP tool implementations
+heimdall/
+├── cli.py                    # Unified CLI entry point (heimdall command)
+├── operations.py             # Pure operations layer - business logic
+├── mcp_server.py            # Standalone MCP server (heimdall-mcp command)
+├── interactive_shell.py     # Interactive memory shell
+├── display_utils.py         # Rich terminal formatting utilities
+├── cli_commands/            # Modular CLI command implementations
+│   ├── cognitive_commands.py   # Memory operations (store, recall, load, status)
+│   ├── health_commands.py      # Health checks and shell access
+│   ├── qdrant_commands.py      # Qdrant service management
+│   ├── monitor_commands.py     # File monitoring service
+│   └── project_commands.py     # Project collection management
+└── cognitive_system/        # Service management utilities
+    ├── service_manager.py      # Docker/Qdrant service management
+    ├── monitoring_service.py   # Automatic file monitoring service
+    ├── health_checker.py       # System health validation
+    └── service_health.py       # Health check system for monitoring
 
-memory_system/
-├── cli.py                # Service management CLI (memory_system command)
-├── service_manager.py    # Docker/Qdrant service management
-├── interactive_shell.py  # Interactive memory shell
-├── monitoring_service.py # Automatic file monitoring service
-└── service_health.py     # Health check system for monitoring
+interfaces/
+├── cli.py                 # Legacy CognitiveCLI (deprecated)
+├── mcp_server.py         # Legacy MCP server (deprecated)
+└── mcp_tools/            # Individual MCP tool implementations
 ```
 
 ## Development Commands
 
-### System Management
+### Unified CLI Commands
 ```bash
+# Memory operations
+heimdall store "Experience text"           # Store experience with context
+heimdall recall "query text"              # Retrieve memories with semantic search
+heimdall load /path/to/file               # Load memories from files/directories
+heimdall git-load /path/to/repo           # Load git commit patterns
+heimdall status                           # System status and memory statistics
+
 # Service management
-memory_system qdrant --help  # See help for Qdrant related commands
+heimdall qdrant start                     # Start Qdrant vector database
+heimdall qdrant stop                      # Stop Qdrant service
+heimdall qdrant status                    # Check Qdrant status
+heimdall qdrant logs                      # View Qdrant logs
 
-# Health checking
-memory_system doctor          # Full system health check
-
-# Interactive shell
-memory_system shell          # Interactive memory operations
-
-# MCP server
-memory_system serve mcp      # Start MCP server (stdio)
+# Health and diagnostics
+heimdall doctor                           # Full system health check
+heimdall shell                            # Interactive memory shell
 
 # File monitoring service
-memory_system monitor start   # Start automatic file monitoring
-memory_system monitor stop    # Stop file monitoring
-memory_system monitor restart # Restart monitoring service
-memory_system monitor status  # Check monitoring service status
-memory_system monitor health  # Detailed monitoring health check
+heimdall monitor start                    # Start automatic file monitoring
+heimdall monitor stop                     # Stop file monitoring
+heimdall monitor restart                  # Restart monitoring service
+heimdall monitor status                   # Check monitoring service status
+heimdall monitor health                   # Detailed monitoring health check
+
+# Project management
+heimdall project init                     # Initialize project memory collection
+heimdall project list                     # List available projects
+heimdall project clean                    # Clean up project containers
 ```
 
-### Memory Operations (CLI)
+### Standalone MCP Server
 ```bash
-# Use help
-cognitive-cli --help
+# AI-agnostic MCP server
+heimdall-mcp                              # Start MCP server (stdio mode)
+python -m heimdall.mcp_server            # Alternative execution method
 ```
 
 ## MCP Integration

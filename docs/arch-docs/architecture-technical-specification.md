@@ -147,18 +147,18 @@ The system includes production-ready automatic file change monitoring that synch
 
 ### CLI Integration
 
-The `memory_system` CLI provides monitoring commands:
+The unified `heimdall` CLI provides monitoring commands:
 
 ```bash
 # Monitoring service management
-memory_system monitor start      # Start monitoring service
-memory_system monitor stop       # Stop monitoring service
-memory_system monitor restart    # Restart monitoring service
-memory_system monitor status     # Check service status
-memory_system monitor health     # Detailed health check
+heimdall monitor start      # Start monitoring service
+heimdall monitor stop       # Stop monitoring service
+heimdall monitor restart    # Restart monitoring service
+heimdall monitor status     # Check service status
+heimdall monitor health     # Detailed health check
 
 # Health check integration
-memory_system doctor             # Includes monitoring service validation
+heimdall doctor             # Includes monitoring service validation
 ```
 
 ### Memory Source Path Querying
@@ -405,17 +405,28 @@ cognitive_memory/
     ├── integration/          # Cross-component tests
     └── e2e/                  # End-to-end scenarios
 
-interfaces/
-├── cli.py                   # CognitiveCLI - main CLI interface
-├── mcp_server.py           # MCP protocol server
-└── mcp_tools/              # Individual MCP tool implementations
+heimdall/
+├── cli.py                      # Unified CLI entry point (heimdall command)
+├── operations.py               # Pure operations layer - business logic
+├── mcp_server.py              # Standalone MCP server (heimdall-mcp command)
+├── interactive_shell.py       # Interactive memory shell
+├── display_utils.py           # Rich terminal formatting utilities
+├── cli_commands/              # Modular CLI command implementations
+│   ├── cognitive_commands.py     # Memory operations (store, recall, load, status)
+│   ├── health_commands.py        # Health checks and shell access
+│   ├── qdrant_commands.py        # Qdrant service management
+│   ├── monitor_commands.py       # File monitoring service
+│   └── project_commands.py       # Project collection management
+└── cognitive_system/          # Service management utilities
+    ├── service_manager.py        # Docker/Qdrant service management
+    ├── monitoring_service.py     # Automatic file monitoring service
+    ├── health_checker.py         # System health validation
+    └── service_health.py         # Health check system for monitoring
 
-memory_system/
-├── cli.py                  # Service management CLI (memory_system command)
-├── service_manager.py      # Docker/Qdrant service management
-├── interactive_shell.py    # Interactive memory shell
-├── monitoring_service.py   # Automatic file monitoring service
-└── service_health.py       # Health check system for monitoring
+interfaces/
+├── cli.py                     # Legacy CognitiveCLI (deprecated)
+├── mcp_server.py             # Legacy MCP server (deprecated)
+└── mcp_tools/                # Individual MCP tool implementations
 
 scripts/
 ├── setup_project_memory.sh    # Project isolation setup
@@ -591,9 +602,9 @@ logger.error("Qdrant connection failed", error=str(e))
 #### 1. Researcher Workflow
 ```bash
 # One-time setup
-$ memory_system doctor              # Check system health
-$ memory_system qdrant start       # Start vector database
-$ memory_system shell               # Interactive session
+$ heimdall doctor              # Check system health
+$ heimdall qdrant start       # Start vector database
+$ heimdall shell               # Interactive session
 
 # Daily usage
 cognitive> store "Working on transformer attention mechanisms"
@@ -633,58 +644,63 @@ cognitive> exit
 #### 3. CLI Integration
 ```bash
 # Direct CLI access
-$ cognitive-cli store "Important system insight"
-$ cognitive-cli retrieve "machine learning patterns"
+$ heimdall store "Important system insight"
+$ heimdall recall "machine learning patterns"
 ```
 
 ### Setup Automation Infrastructure
 
 #### Unified CLI Architecture
 ```python
-# memory_system/cli.py
+# heimdall/cli.py
 import typer
 from typing import Optional
 
-app = typer.Typer(help="Cognitive Memory System")
+app = typer.Typer(help="Heimdall Cognitive Memory System")
 
-# Service management commands
+# Import and register command modules
+from heimdall.cli_commands import (
+    cognitive_commands,
+    health_commands,
+    qdrant_commands,
+    monitor_commands,
+    project_commands
+)
+
+# Register cognitive operations
+app.command("store")(cognitive_commands.store)
+app.command("recall")(cognitive_commands.recall)
+app.command("load")(cognitive_commands.load)
+app.command("git-load")(cognitive_commands.git_load)
+app.command("status")(cognitive_commands.status)
+
+# Register health and shell commands
+app.command("doctor")(health_commands.doctor)
+app.command("shell")(health_commands.shell)
+
+# Register service management commands
 qdrant_app = typer.Typer(help="Qdrant vector database management")
 app.add_typer(qdrant_app, name="qdrant")
+qdrant_app.command("start")(qdrant_commands.qdrant_start)
+qdrant_app.command("stop")(qdrant_commands.qdrant_stop)
+qdrant_app.command("status")(qdrant_commands.qdrant_status)
+qdrant_app.command("logs")(qdrant_commands.qdrant_logs)
 
-# Server interface commands
-serve_app = typer.Typer(help="Start interface servers")
-app.add_typer(serve_app, name="serve")
+# Register monitoring commands
+monitor_app = typer.Typer(help="File monitoring service management")
+app.add_typer(monitor_app, name="monitor")
+monitor_app.command("start")(monitor_commands.monitor_start)
+monitor_app.command("stop")(monitor_commands.monitor_stop)
+monitor_app.command("restart")(monitor_commands.monitor_restart)
+monitor_app.command("status")(monitor_commands.monitor_status)
+monitor_app.command("health")(monitor_commands.monitor_health)
 
-@qdrant_app.command("start")
-def qdrant_start(
-    port: int = 6333,
-    data_dir: Optional[str] = None,
-    detach: bool = True,
-    force_local: bool = False
-):
-    """Start Qdrant vector database"""
-    pass
-
-@serve_app.command("mcp")
-def serve_mcp(
-    port: Optional[int] = None,
-    stdin: bool = False
-):
-    """Start MCP protocol server"""
-    pass
-
-@app.command("shell")
-def interactive_shell():
-    """Start interactive cognitive memory shell"""
-    pass
-
-@app.command("doctor")
-def health_check(
-    json_output: bool = False,
-    verbose: bool = False
-):
-    """Run comprehensive health checks"""
-    pass
+# Register project commands
+project_app = typer.Typer(help="Project memory management")
+app.add_typer(project_app, name="project")
+project_app.command("init")(project_commands.project_init)
+project_app.command("list")(project_commands.project_list)
+project_app.command("clean")(project_commands.project_clean)
 ```
 
 #### Service Management Flow
@@ -697,9 +713,9 @@ Experience Input → Multi-dimensional Encoding → Vector Storage (Qdrant)
 
 #### How Components Work Together
 1. **Setup Phase**: System checks for Docker, downloads Qdrant binary if needed, creates data directories, initializes collections
-2. **Runtime Architecture**: Single `memory_system` command manages everything, handles Qdrant lifecycle, serves CLI/HTTP/MCP interfaces
+2. **Runtime Architecture**: Dual entry points - `heimdall` command for terminal use, `heimdall-mcp` for AI integration
 3. **Persistent Storage**: Memories survive restarts via Docker volumes/local files
-4. **AI System Integration**: LLMs connect via MCP for real-time memory operations, context preservation, serendipitous discovery
+4. **AI System Integration**: LLMs connect via standalone MCP server for real-time memory operations, context preservation, serendipitous discovery
 
 **API Operations**:
 - `store_experience(text, context)` - Form new memory
@@ -723,14 +739,18 @@ heimdall-mcp-server/
 │   ├── retrieval/          # Memory activation and bridge discovery
 │   ├── git_analysis/       # Git commit processing and analysis
 │   └── loaders/            # Content ingestion (markdown, git)
-├── interfaces/             # External API implementations
-│   ├── cli.py             # CognitiveCLI for direct interaction
-│   ├── mcp_server.py      # MCP protocol server for Claude Code
+├── heimdall/               # Unified CLI and MCP interfaces
+│   ├── cli.py             # Main heimdall command entry point
+│   ├── operations.py      # Pure operations layer (business logic)
+│   ├── mcp_server.py      # Standalone MCP server (heimdall-mcp)
+│   ├── interactive_shell.py # Interactive memory operations
+│   ├── display_utils.py   # Rich terminal formatting utilities
+│   ├── cli_commands/      # Modular CLI command implementations
+│   └── cognitive_system/  # Service management utilities
+├── interfaces/             # Legacy API implementations (deprecated)
+│   ├── cli.py             # Legacy CognitiveCLI
+│   ├── mcp_server.py      # Legacy MCP server
 │   └── mcp_tools/         # Individual MCP tool implementations
-├── memory_system/          # Service management and deployment
-│   ├── cli.py             # Main memory_system command
-│   ├── service_manager.py  # Docker container orchestration
-│   └── interactive_shell.py # Interactive memory operations
 ├── docker/                 # Container infrastructure
 │   ├── Dockerfile         # Cognitive memory container image
 │   ├── docker-compose.template.yml # Project-specific containers

@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from cognitive_memory.core.memory import BridgeMemory, CognitiveMemory
-from memory_system.display_utils import format_source_info
+from heimdall.display_utils import format_source_info
 
 
 def format_memory_for_llm(memory: CognitiveMemory) -> dict[str, Any]:

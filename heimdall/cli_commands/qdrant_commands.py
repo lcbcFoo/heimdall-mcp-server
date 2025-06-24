@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from memory_system.service_manager import QdrantManager, ServiceStatus
+from heimdall.cognitive_system.service_manager import QdrantManager, ServiceStatus
 
 console = Console()
 
