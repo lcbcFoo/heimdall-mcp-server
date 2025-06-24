@@ -200,7 +200,7 @@ class HeimdallMCPServer:
 - Waiting for Step 1-4 completion
 
 #### Next Tasks
-- Rename `memory_system/` directory to `heimdall/`
+- Remove `memory_system/` directory in favor to `heimdall/`
 - Update `pyproject.toml` console script entries for `heimdall` and `heimdall-mcp`
 - Update all import statements throughout codebase
 - Update documentation and help text references

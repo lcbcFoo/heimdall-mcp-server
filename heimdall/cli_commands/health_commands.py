@@ -14,8 +14,8 @@ from cognitive_memory.main import (
     initialize_system,
     initialize_with_config,
 )
+from heimdall.interactive_shell import InteractiveShell
 from memory_system.health_checker import HealthChecker, HealthCheckResults, HealthResult
-from memory_system.interactive_shell import InteractiveShell
 
 console = Console()
 

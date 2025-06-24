@@ -25,7 +25,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from cognitive_memory.core.interfaces import CognitiveSystem
-from memory_system.display_utils import format_source_info
+from heimdall.display_utils import format_source_info
+from heimdall.operations import CognitiveOperations
 
 
 class CognitiveShellCompleter(Completer):
@@ -192,6 +193,7 @@ class InteractiveShell:
             custom_prompt: Optional custom prompt string
         """
         self.cognitive_system = cognitive_system
+        self.operations = CognitiveOperations(cognitive_system)
         self.console = Console()
         self.prompt_text = custom_prompt or "cognitive"
         self.session_stats = {
@@ -526,34 +528,47 @@ class InteractiveShell:
         )
 
     def _store_experience(self, text: str) -> None:
-        """Store a new experience."""
+        """Store a new experience using operations layer."""
         try:
-            memory_id = self.cognitive_system.store_experience(text)
-            if memory_id:
+            result = self.operations.store_experience(text)
+
+            if result["success"]:
                 self.session_stats["memories_stored"] += 1
+                memory_id = result["memory_id"]
+                hierarchy_level = result["hierarchy_level"]
+                memory_type = result["memory_type"]
                 self.console.print(
-                    f"[bold green]✅ Experience stored with ID: {memory_id}[/bold green]"
+                    f"[bold green]✅ Experience stored as {memory_type} memory\n"
+                    f"   ID: {memory_id}, Level: L{hierarchy_level}[/bold green]"
                 )
             else:
-                self.console.print("[bold red]❌ Failed to store experience[/bold red]")
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Failed to store experience: {error_msg}[/bold red]"
+                )
         except Exception as e:
             self.console.print(f"[bold red]❌ Error storing experience: {e}[/bold red]")
 
     def _retrieve_memories(self, query: str, full_output: bool = False) -> None:
-        """Retrieve memories for a query."""
+        """Retrieve memories for a query using operations layer."""
         try:
             self.session_stats["queries_made"] += 1
 
-            results = self.cognitive_system.retrieve_memories(
+            result = self.operations.retrieve_memories(
                 query=query,
                 types=["core", "peripheral", "bridge"],
-                max_results=10,
+                limit=10,
             )
 
-            # Count total results (handle BridgeMemory objects in bridge results)
-            total_results = 0
-            for _memory_type, memories in results.items():
-                total_results += len(memories)
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Error retrieving memories: {error_msg}[/bold red]"
+                )
+                return
+
+            memories_by_type = result["memories_by_type"]
+            total_results = result["total_count"]
 
             if total_results == 0:
                 self.console.print(
@@ -565,7 +580,7 @@ class InteractiveShell:
                 f"\n[bold blue]📋 Retrieved {total_results} memories for: '{query}'[/bold blue]"
             )
 
-            for memory_type, memories in results.items():
+            for memory_type, memories in memories_by_type.items():
                 if memories:
                     # Choose appropriate styling for each memory type
                     if memory_type == "core":
@@ -583,11 +598,11 @@ class InteractiveShell:
 
                     # Use bridge-specific formatting for bridge memories
                     if memory_type == "bridge":
-                        content = self._format_bridges(
+                        content = self._format_bridges_from_data(
                             memories, full_output=full_output
                         )
                     else:
-                        content = self._format_memories(
+                        content = self._format_memories_from_data(
                             memories, full_output=full_output
                         )
 
@@ -604,17 +619,24 @@ class InteractiveShell:
             )
 
     def _discover_bridges(self, query: str) -> None:
-        """Discover bridge connections."""
+        """Discover bridge connections using operations layer."""
         try:
             self.session_stats["bridges_discovered"] += 1
 
-            results = self.cognitive_system.retrieve_memories(
+            result = self.operations.retrieve_memories(
                 query=query,
                 types=["bridge"],
-                max_results=5,
+                limit=5,
             )
 
-            bridges = results.get("bridge", [])
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Error discovering bridges: {error_msg}[/bold red]"
+                )
+                return
+
+            bridges = result["memories_by_type"].get("bridge", [])
 
             if not bridges:
                 self.console.print(
@@ -623,7 +645,7 @@ class InteractiveShell:
                 return
 
             bridge_panel = Panel(
-                self._format_bridges(bridges),
+                self._format_bridges_from_data(bridges),
                 title=f"🌉 BRIDGE CONNECTIONS ({len(bridges)})",
                 border_style="magenta",
             )
@@ -635,9 +657,16 @@ class InteractiveShell:
             )
 
     def _show_status(self) -> None:
-        """Show system status."""
+        """Show system status using operations layer."""
         try:
-            stats = self.cognitive_system.get_memory_stats()
+            result = self.operations.get_system_status(detailed=True)
+
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Error retrieving status: {error_msg}[/bold red]"
+                )
+                return
 
             status_table = Table(
                 title="System Status", show_header=True, header_style="bold green"
@@ -646,23 +675,32 @@ class InteractiveShell:
             status_table.add_column("Value", style="white")
 
             # Memory counts
-            if "memory_counts" in stats:
-                for key, count in stats["memory_counts"].items():
-                    if isinstance(count, int):
-                        level_name = (
-                            key.replace("level_", "L").replace("_", " ").title()
-                        )
-                        status_table.add_row(level_name, str(count))
+            memory_counts = result.get("memory_counts", {})
+            for key, count in memory_counts.items():
+                if isinstance(count, int):
+                    level_name = key.replace("level_", "L").replace("_", " ").title()
+                    status_table.add_row(level_name, str(count))
 
-            # Configuration
-            if "system_config" in stats:
-                config = stats["system_config"]
+            # System configuration
+            system_config = result.get("system_config", {})
+            if system_config:
                 status_table.add_row(
                     "Activation Threshold",
-                    str(config.get("activation_threshold", "N/A")),
+                    str(system_config.get("activation_threshold", "N/A")),
                 )
                 status_table.add_row(
-                    "Bridge Discovery K", str(config.get("bridge_discovery_k", "N/A"))
+                    "Bridge Discovery K",
+                    str(system_config.get("bridge_discovery_k", "N/A")),
+                )
+
+            # Vector database info
+            vector_db = result.get("vector_database", {})
+            if vector_db:
+                status_table.add_row(
+                    "Vector Collections", str(vector_db.get("collection_count", "N/A"))
+                )
+                status_table.add_row(
+                    "Total Vectors", str(vector_db.get("total_vectors", "N/A"))
                 )
 
             self.console.print(status_table)
@@ -671,13 +709,20 @@ class InteractiveShell:
             self.console.print(f"[bold red]❌ Error retrieving status: {e}[/bold red]")
 
     def _show_config(self) -> None:
-        """Show detailed configuration."""
+        """Show detailed configuration using operations layer."""
         try:
-            stats = self.cognitive_system.get_memory_stats()
+            result = self.operations.get_system_status(detailed=True)
 
-            if "system_config" in stats:
-                config = stats["system_config"]
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Error retrieving configuration: {error_msg}[/bold red]"
+                )
+                return
 
+            system_config = result.get("system_config", {})
+
+            if system_config:
                 config_table = Table(
                     title="System Configuration",
                     show_header=True,
@@ -686,7 +731,7 @@ class InteractiveShell:
                 config_table.add_column("Setting", style="cyan")
                 config_table.add_column("Value", style="white")
 
-                for key, value in config.items():
+                for key, value in system_config.items():
                     config_table.add_row(key.replace("_", " ").title(), str(value))
 
                 self.console.print(config_table)
@@ -701,13 +746,20 @@ class InteractiveShell:
             )
 
     def _consolidate_memories(self) -> None:
-        """Trigger memory consolidation."""
+        """Trigger memory consolidation using operations layer."""
         try:
             self.console.print(
                 "[bold blue]🔄 Starting memory consolidation...[/bold blue]"
             )
 
-            results = self.cognitive_system.consolidate_memories()
+            result = self.operations.consolidate_memories(dry_run=False)
+
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Consolidation failed: {error_msg}[/bold red]"
+                )
+                return
 
             consolidation_table = Table(
                 title="Consolidation Results",
@@ -718,13 +770,13 @@ class InteractiveShell:
             consolidation_table.add_column("Count", style="white")
 
             consolidation_table.add_row(
-                "Total Episodic", str(results.get("total_episodic", 0))
+                "Total Episodic", str(result.get("total_episodic", 0))
             )
             consolidation_table.add_row(
-                "Consolidated", str(results.get("consolidated", 0))
+                "Consolidated", str(result.get("consolidated", 0))
             )
-            consolidation_table.add_row("Failed", str(results.get("failed", 0)))
-            consolidation_table.add_row("Skipped", str(results.get("skipped", 0)))
+            consolidation_table.add_row("Failed", str(result.get("failed", 0)))
+            consolidation_table.add_row("Skipped", str(result.get("skipped", 0)))
 
             self.console.print(consolidation_table)
             self.console.print("[bold green]✅ Consolidation completed[/bold green]")
@@ -735,51 +787,94 @@ class InteractiveShell:
             )
 
     def _load_memories(self, file_path: str, recursive: bool = False) -> None:
-        """Load memories from a file using CognitiveCLI."""
+        """Load memories from a file using operations layer."""
         try:
-            # Import and use the existing CognitiveCLI implementation
-            from interfaces.cli import CognitiveCLI
-
-            cli = CognitiveCLI(self.cognitive_system)
-
             self.console.print(
                 f"[bold blue]📁 Loading memories from {file_path}...[/bold blue]"
             )
 
-            # Use the existing load_memories implementation
-            success = cli.load_memories(file_path, recursive=recursive)
+            result = self.operations.load_memories(
+                source_path=file_path, recursive=recursive, dry_run=False
+            )
 
-            if success:
+            if result["success"]:
+                total_memories = result.get("total_memories_created", 0)
+                files_processed = result.get("files_processed", 0)
+
                 self.console.print(
-                    "[bold green]✅ Memory loading completed successfully[/bold green]"
+                    f"[bold green]✅ Memory loading completed successfully\n"
+                    f"   Files processed: {files_processed}\n"
+                    f"   Memories created: {total_memories}[/bold green]"
                 )
+
+                # Show file breakdown if available
+                processing_results = result.get("processing_results", [])
+                if (
+                    processing_results and len(processing_results) <= 10
+                ):  # Don't overwhelm with too many files
+                    file_table = Table(title="Files Processed", show_header=True)
+                    file_table.add_column("File", style="cyan")
+                    file_table.add_column("Memories", style="white")
+
+                    for file_result in processing_results:
+                        file_name = Path(file_result["file_path"]).name
+                        memory_count = file_result.get("memories_created", 0)
+                        file_table.add_row(file_name, str(memory_count))
+
+                    self.console.print(file_table)
             else:
-                self.console.print("[bold red]❌ Memory loading failed[/bold red]")
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Memory loading failed: {error_msg}[/bold red]"
+                )
 
         except Exception as e:
             self.console.print(f"[bold red]❌ Error loading memories: {e}[/bold red]")
 
     def _load_git_patterns(self, repo_path: str, dry_run: bool = False) -> None:
-        """Load git patterns using CognitiveCLI."""
+        """Load git patterns using operations layer."""
         try:
-            # Import and use the existing CognitiveCLI implementation
-            from interfaces.cli import CognitiveCLI
-
-            cli = CognitiveCLI(self.cognitive_system)
-
             self.console.print(
                 f"[bold blue]📁 Loading git patterns from {repo_path}...[/bold blue]"
             )
 
-            # Use the existing load_git_patterns implementation
-            success = cli.load_git_patterns(repo_path, dry_run=dry_run)
+            result = self.operations.load_git_patterns(
+                repo_path=repo_path,
+                dry_run=dry_run,
+                time_window="3m",  # Default 3 months
+                refresh=False,
+            )
 
-            if success:
+            if result["success"]:
+                commits_processed = result.get("commits_processed", 0)
+                memories_created = result.get("memories_created", 0)
+                patterns_extracted = result.get("patterns_extracted", 0)
+
                 self.console.print(
-                    "[bold green]✅ Git pattern loading completed successfully[/bold green]"
+                    f"[bold green]✅ Git pattern loading completed successfully\n"
+                    f"   Commits processed: {commits_processed}\n"
+                    f"   Memories created: {memories_created}\n"
+                    f"   Patterns extracted: {patterns_extracted}[/bold green]"
                 )
+
+                # Show pattern breakdown if available
+                pattern_summary = result.get("pattern_summary", {})
+                if pattern_summary:
+                    pattern_table = Table(title="Pattern Types", show_header=True)
+                    pattern_table.add_column("Pattern Type", style="cyan")
+                    pattern_table.add_column("Count", style="white")
+
+                    for pattern_type, count in pattern_summary.items():
+                        pattern_table.add_row(
+                            pattern_type.replace("_", " ").title(), str(count)
+                        )
+
+                    self.console.print(pattern_table)
             else:
-                self.console.print("[bold red]❌ Git pattern loading failed[/bold red]")
+                error_msg = result.get("error", "Unknown error")
+                self.console.print(
+                    f"[bold red]❌ Git pattern loading failed: {error_msg}[/bold red]"
+                )
 
         except Exception as e:
             self.console.print(
@@ -787,39 +882,65 @@ class InteractiveShell:
             )
 
     def _show_git_status(self, repo_path: str | None = None) -> None:
-        """Show git analysis status using CognitiveCLI."""
+        """Show git analysis status."""
         try:
-            # Import and use the existing CognitiveCLI implementation
-            from interfaces.cli import CognitiveCLI
+            self.console.print("[bold blue]📊 Git Analysis Status[/bold blue]")
 
-            cli = CognitiveCLI(self.cognitive_system)
+            # For now, show a basic message since git status is not in operations layer yet
+            # This would need to be implemented in the operations layer in the future
+            self.console.print(
+                "[yellow]ℹ️  Git status analysis not yet available through operations layer[/yellow]"
+            )
 
-            # Use the existing show_git_status implementation
-            success = cli.show_git_status(repo_path)
-
-            if not success:
-                self.console.print(
-                    "[bold red]❌ Failed to retrieve git status[/bold red]"
-                )
+            if repo_path:
+                self.console.print(f"   Repository: {repo_path}")
 
         except Exception as e:
             self.console.print(f"[bold red]❌ Error showing git status: {e}[/bold red]")
 
     def _search_git_patterns(self, query: str, pattern_type: str | None = None) -> None:
-        """Search git patterns using CognitiveCLI."""
+        """Search git patterns by querying memories."""
         try:
-            # Import and use the existing CognitiveCLI implementation
-            from interfaces.cli import CognitiveCLI
+            # Search for git patterns in stored memories
+            search_query = f"git {query}"
+            if pattern_type:
+                search_query += f" {pattern_type}"
 
-            cli = CognitiveCLI(self.cognitive_system)
+            self.console.print(
+                f"[bold blue]🔍 Searching git patterns for: '{query}'[/bold blue]"
+            )
 
-            # Use the existing search_git_patterns implementation
-            success = cli.search_git_patterns(query, pattern_type=pattern_type)
+            result = self.operations.retrieve_memories(
+                query=search_query, types=["core", "peripheral"], limit=10
+            )
 
-            if not success:
+            if not result["success"]:
+                error_msg = result.get("error", "Unknown error")
                 self.console.print(
-                    "[bold red]❌ Failed to search git patterns[/bold red]"
+                    f"[bold red]❌ Pattern search failed: {error_msg}[/bold red]"
                 )
+                return
+
+            memories_by_type = result["memories_by_type"]
+            total_results = result["total_count"]
+
+            if total_results == 0:
+                self.console.print(
+                    "[yellow]📋 No git patterns found for query[/yellow]"
+                )
+                return
+
+            for memory_type, memories in memories_by_type.items():
+                if memories:
+                    content = self._format_memories_from_data(
+                        memories, full_output=True
+                    )
+                    type_panel = Panel(
+                        content,
+                        title=f"🔍 GIT PATTERNS - {memory_type.upper()} ({len(memories)})",
+                        border_style="green",
+                    )
+                    self.console.print(type_panel)
 
         except Exception as e:
             self.console.print(
@@ -921,7 +1042,7 @@ class InteractiveShell:
         return "\n".join(preview_lines)
 
     def _format_bridges(self, bridges: list[Any], full_output: bool = False) -> str:
-        """Format bridge connections for display."""
+        """Format bridge connections for display (legacy method for compatibility)."""
         lines = []
         for i, bridge_item in enumerate(bridges, 1):
             # Handle BridgeMemory objects properly
@@ -970,4 +1091,114 @@ class InteractiveShell:
                 if source_info:
                     lines.append(f"   Source: {source_info}")
             lines.append("")  # Empty line for separation
+        return "\n".join(lines)
+
+    def _format_memories_from_data(
+        self, memories: list[dict], full_output: bool = False
+    ) -> str:
+        """Format memories from structured data returned by operations layer."""
+        lines = []
+        for i, memory_data in enumerate(memories, 1):
+            # Extract data from structured memory dict
+            memory_id = memory_data.get("id", "unknown")
+            content = memory_data.get("content", "")
+            metadata = memory_data.get("metadata", {})
+            hierarchy_level = memory_data.get("hierarchy_level", 0)
+            memory_type = memory_data.get("memory_type", "unknown")
+            strength = memory_data.get("strength", 0.0)
+
+            # Get title from metadata if available
+            title = metadata.get("title", "")
+
+            # Smart content preview
+            if full_output:
+                content_preview = content.strip()
+            else:
+                content_preview = self._create_content_preview(content, title)
+
+            # Memory header with type and title
+            if title:
+                lines.append(f"{i}. [{memory_type}] {title}")
+            else:
+                lines.append(f"{i}. [{memory_type}] Memory")
+
+            # Content preview with proper indentation
+            for line in content_preview.split("\n"):
+                lines.append(f"   {line}")
+
+            # Metadata line
+            score = metadata.get("similarity_score", strength)
+            lines.append(
+                f"   ID: {memory_id}, Level: L{hierarchy_level}, Strength: {score:.2f}"
+            )
+
+            # Source information from metadata
+            source_path = metadata.get("source_path")
+            source_type = metadata.get("source_type")
+            if source_path or source_type:
+                source_info = ""
+                if source_type:
+                    source_info += source_type
+                if source_path:
+                    if source_info:
+                        source_info += f": {source_path}"
+                    else:
+                        source_info = source_path
+                lines.append(f"   Source: {source_info}")
+
+            lines.append("")  # Empty line for separation
+
+        return "\n".join(lines)
+
+    def _format_bridges_from_data(
+        self, bridges: list[dict], full_output: bool = False
+    ) -> str:
+        """Format bridge connections from structured data returned by operations layer."""
+        lines = []
+        for i, bridge_data in enumerate(bridges, 1):
+            # Extract data from structured bridge dict
+            bridge_data.get("id", "unknown")
+            content = bridge_data.get("content", "")
+            metadata = bridge_data.get("metadata", {})
+
+            # Bridge-specific scores
+            novelty_score = bridge_data.get("novelty_score", 0.0)
+            connection_potential = bridge_data.get("connection_potential", 0.0)
+            bridge_score = bridge_data.get("bridge_score", 0.0)
+            explanation = bridge_data.get("explanation", "")
+
+            # Format content
+            if full_output:
+                formatted_content = content.strip()
+            else:
+                formatted_content = (
+                    content[:80] + "..." if len(content) > 80 else content
+                )
+
+            lines.append(f"{i}. {formatted_content}")
+            lines.append(
+                f"   Novelty: {novelty_score:.2f}, "
+                f"Connection: {connection_potential:.2f}, "
+                f"Bridge Score: {bridge_score:.2f}"
+            )
+
+            if explanation:
+                lines.append(f"   {explanation}")
+
+            # Source information from metadata
+            source_path = metadata.get("source_path")
+            source_type = metadata.get("source_type")
+            if source_path or source_type:
+                source_info = ""
+                if source_type:
+                    source_info += source_type
+                if source_path:
+                    if source_info:
+                        source_info += f": {source_path}"
+                    else:
+                        source_info = source_path
+                lines.append(f"   Source: {source_info}")
+
+            lines.append("")  # Empty line for separation
+
         return "\n".join(lines)
