@@ -374,12 +374,23 @@ class DatabaseConfig:
         )
 
 
+def _get_default_model_cache_dir() -> str:
+    """Get default model cache directory using standard data dirs."""
+    try:
+        from heimdall.cognitive_system.data_dirs import get_models_data_dir
+
+        return str(get_models_data_dir())
+    except ImportError:
+        # Fallback for backward compatibility
+        return "./data/models"
+
+
 @dataclass
 class EmbeddingConfig:
     """Configuration for embedding models."""
 
     model_name: str = "all-MiniLM-L6-v2"
-    model_cache_dir: str = "./data/models"
+    model_cache_dir: str = field(default_factory=_get_default_model_cache_dir)
     embedding_dimension: int = 384  # Sentence-BERT semantic embedding dimension
     batch_size: int = 32
     device: str = "auto"  # auto, cpu, cuda
@@ -389,7 +400,9 @@ class EmbeddingConfig:
         """Create configuration from environment variables."""
         return cls(
             model_name=os.getenv("SENTENCE_BERT_MODEL", cls.model_name),
-            model_cache_dir=os.getenv("MODEL_CACHE_DIR", cls.model_cache_dir),
+            model_cache_dir=os.getenv(
+                "MODEL_CACHE_DIR", _get_default_model_cache_dir()
+            ),
             embedding_dimension=int(
                 os.getenv("EMBEDDING_DIMENSION", str(cls.embedding_dimension))
             ),

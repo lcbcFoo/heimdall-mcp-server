@@ -296,9 +296,17 @@ class QdrantManager:
             # Clean up old project-specific containers first
             self._cleanup_legacy_containers()
 
-            # Use docker-compose to start shared instance
-            # Create docker-compose content inline (no external files needed)
-            compose_content = """
+            # Ensure shared data directories exist
+            from heimdall.cognitive_system.data_dirs import (
+                ensure_data_directories,
+                get_qdrant_data_dir,
+            )
+
+            ensure_data_directories()
+            qdrant_data_dir = get_qdrant_data_dir()
+
+            # Use docker-compose to start shared instance with bind mount
+            compose_content = f"""
 version: '3.8'
 services:
   qdrant:
@@ -308,7 +316,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_storage:/qdrant/storage
+      - {qdrant_data_dir}:/qdrant/storage
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -318,10 +326,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-volumes:
-  qdrant_storage:
-    driver: local
 """.strip()
 
             # Write compose file to temporary location

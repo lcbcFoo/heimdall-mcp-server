@@ -10,6 +10,7 @@ This script automates the release process:
 
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import typer
@@ -17,6 +18,59 @@ from rich.console import Console
 from rich.panel import Panel
 
 console = Console()
+
+
+def get_package_version() -> str:
+    """Get package version from pyproject.toml."""
+    try:
+        import tomllib
+
+        with open("pyproject.toml", "rb") as f:
+            data = tomllib.load(f)
+        return str(data["project"]["version"])
+    except Exception:
+        # Fallback to reading as text
+        with open("pyproject.toml") as f:
+            for line in f:
+                if line.startswith("version ="):
+                    return line.split('"')[1]
+        return "0.2.10"
+
+
+def create_model_package() -> bool:
+    """Create model package zip file for GitHub release."""
+    console.print("[yellow]Creating model package...[/yellow]")
+
+    models_dir = Path("cognitive_memory/data/models")
+    if not models_dir.exists():
+        console.print(f"[red]Models directory not found: {models_dir}[/red]")
+        return False
+
+    version = get_package_version()
+    zip_name = f"heimdall-models-v{version}.zip"
+    zip_path = Path("dist") / zip_name
+
+    # Ensure dist directory exists
+    zip_path.parent.mkdir(exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for file_path in models_dir.rglob("*"):
+                if file_path.is_file():
+                    # Add file with relative path starting from models/
+                    arcname = "models" / file_path.relative_to(models_dir)
+                    zip_file.write(file_path, arcname)
+                    console.print(f"  Added: {arcname}")
+
+        file_size = zip_path.stat().st_size / (1024 * 1024)  # MB
+        console.print(
+            f"[green]Model package created: {zip_path} ({file_size:.1f} MB)[/green]"
+        )
+        return True
+
+    except Exception as e:
+        console.print(f"[red]Failed to create model package: {e}[/red]")
+        return False
 
 
 def run_command(cmd: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -119,6 +173,9 @@ def main(
     validate: bool = typer.Option(True, help="Validate package before building"),
     build: bool = typer.Option(True, help="Build package distributions"),
     check: bool = typer.Option(True, help="Check built distributions"),
+    create_models: bool = typer.Option(
+        True, help="Create model package for GitHub release"
+    ),
     upload: bool = typer.Option(False, help="Upload to PyPI"),
     test_upload: bool = typer.Option(False, help="Upload to TestPyPI"),
 ) -> None:
@@ -153,6 +210,10 @@ def main(
 
         # Check distribution
         if check and not check_distribution():
+            sys.exit(1)
+
+        # Create model package
+        if create_models and not create_model_package():
             sys.exit(1)
 
         # Upload options

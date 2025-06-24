@@ -43,6 +43,25 @@ def initialize_system(profile: str = "default") -> CognitiveMemorySystem:
     """
     logger.info("Initializing cognitive memory system", profile=profile)
 
+    # Initialize shared data directories and environment variables
+    try:
+        from heimdall.cognitive_system.data_dirs import (
+            ensure_models_available,
+            initialize_shared_environment,
+        )
+
+        initialize_shared_environment()
+
+        # Ensure models are available (download if necessary)
+        ensure_models_available()
+    except ImportError:
+        # Graceful fallback if data_dirs module is not available
+        logger.warning(
+            "Shared data directories module not available, using legacy paths"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to ensure models are available: {e}")
+
     try:
         if profile == "default":
             system = create_default_system()

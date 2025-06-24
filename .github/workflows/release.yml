@@ -37,6 +37,17 @@ jobs:
       run: |
         python scripts/release.py --no-upload
 
+    - name: Upload model package to GitHub release
+      if: ${{ github.event_name == 'release' }}
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./dist/heimdall-models-${{ github.event.release.tag_name }}.zip
+        asset_name: heimdall-models-${{ github.event.release.tag_name }}.zip
+        asset_content_type: application/zip
+
     - name: Upload to TestPyPI
       if: ${{ github.event.inputs.test_upload == 'true' }}
       env:

@@ -664,28 +664,54 @@ class HealthChecker:
         verbose: bool = False,
         fix_issues: bool = False,
     ) -> HealthCheck:
-        """Check data directories and permissions."""
-        required_dirs = [
-            Path("./data"),
-            Path("./data/qdrant"),
-            Path("./data/models"),
-        ]
+        """Check shared data directories and permissions."""
+        try:
+            from heimdall.cognitive_system.data_dirs import (
+                get_heimdall_data_dir,
+                get_logs_data_dir,
+                get_models_data_dir,
+                get_qdrant_data_dir,
+            )
+
+            # Use shared data directories
+            required_dirs = [
+                get_heimdall_data_dir(),
+                get_qdrant_data_dir(),
+                get_models_data_dir(),
+                get_logs_data_dir(),
+            ]
+
+            dir_names = [
+                "heimdall data",
+                "qdrant data",
+                "models cache",
+                "logs",
+            ]
+
+        except ImportError:
+            # Fallback to legacy directories if shared data module unavailable
+            required_dirs = [
+                Path("./data"),
+                Path("./data/qdrant"),
+                Path("./data/models"),
+            ]
+            dir_names = ["data", "qdrant", "models"]
 
         issues = []
         created_dirs = []
 
-        for dir_path in required_dirs:
+        for dir_path, dir_name in zip(required_dirs, dir_names, strict=False):
             if not dir_path.exists():
                 if fix_issues:
                     try:
                         dir_path.mkdir(parents=True, exist_ok=True)
-                        created_dirs.append(str(dir_path))
+                        created_dirs.append(f"{dir_name} ({dir_path})")
                     except Exception as e:
-                        issues.append(f"Cannot create {dir_path}: {str(e)}")
+                        issues.append(f"Cannot create {dir_name} directory: {str(e)}")
                 else:
-                    issues.append(f"Missing directory: {dir_path}")
+                    issues.append(f"Missing {dir_name} directory: {dir_path}")
             elif not os.access(dir_path, os.W_OK):
-                issues.append(f"No write permission: {dir_path}")
+                issues.append(f"No write permission for {dir_name}: {dir_path}")
 
         if issues:
             status = HealthResult.CRITICAL if not fix_issues else HealthResult.WARNING
@@ -696,14 +722,17 @@ class HealthChecker:
                 details={"issues": issues},
             )
 
-        message = "Data directories are available"
+        message = "All data directories are accessible"
         if created_dirs:
-            message = f"Fixed: Created directories {', '.join(created_dirs)}"
+            message = f"Fixed: Created {', '.join(created_dirs)}"
 
         details = None
         if verbose:
             details = {
-                "directories": [str(d) for d in required_dirs],
+                "directories": [
+                    (name, str(path))
+                    for name, path in zip(dir_names, required_dirs, strict=False)
+                ],
                 "created": created_dirs,
             }
 
@@ -807,6 +836,39 @@ class HealthChecker:
                 )
 
             except Exception as model_error:
+                # If fix_issues is True, try to download models
+                if fix_issues:
+                    try:
+                        from heimdall.cognitive_system.data_dirs import (
+                            ensure_models_available,
+                        )
+
+                        print("Models not found, attempting to download...")
+                        ensure_models_available()
+
+                        # Retry after download
+                        provider = ONNXEmbeddingProvider()
+                        test_encoding = provider.encode("test sentence")
+
+                        return HealthCheck(
+                            name="Model Availability",
+                            status=HealthResult.HEALTHY,
+                            message="ONNX model downloaded and working",
+                            fix_attempted=True,
+                            fix_successful=True,
+                            details={"model_path": str(provider.model_path)}
+                            if verbose
+                            else None,
+                        )
+                    except Exception as download_error:
+                        return HealthCheck(
+                            name="Model Availability",
+                            status=HealthResult.CRITICAL,
+                            message=f"Model download failed: {str(download_error)}",
+                            fix_attempted=True,
+                            fix_successful=False,
+                        )
+
                 return HealthCheck(
                     name="Model Availability",
                     status=HealthResult.CRITICAL,
