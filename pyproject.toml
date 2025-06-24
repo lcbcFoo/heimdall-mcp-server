@@ -78,7 +78,7 @@ heimdall-mcp = "heimdall.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cognitive_memory*", "interfaces*", "memory_system*", "heimdall*"]
+include = ["cognitive_memory*", "heimdall*"]
 
 [tool.setuptools]
 include-package-data = true

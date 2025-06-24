@@ -25,7 +25,7 @@ except ImportError:
 try:
     from cognitive_memory.core.config import get_project_paths
     from cognitive_memory.main import initialize_system
-    from interfaces.cli import CognitiveCLI
+    from heimdall.operations import CognitiveOperations
 except ImportError as e:
     print(f"Heimdall: WARNING: Cannot import cognitive memory system: {e}")
     sys.exit(0)
@@ -136,15 +136,16 @@ def main() -> None:
 
             with contextlib.redirect_stdout(captured_output):
                 cognitive_system = initialize_system()
-                cli = CognitiveCLI(cognitive_system)
+                operations = CognitiveOperations(cognitive_system)
 
                 # Use load_git_patterns which handles incremental loading automatically
                 # with max_commits=1 to process only the latest commit
-                success = cli.load_git_patterns(
+                result = operations.load_git_patterns(
                     repo_path=str(repo_root),
                     dry_run=False,
                     max_commits=1,  # Only process the latest commit
                 )
+                success = result.get("success", False)
 
             # Restore original log level and re-enable loguru
             os.environ["LOG_LEVEL"] = original_log_level
@@ -155,18 +156,8 @@ def main() -> None:
             except ImportError:
                 pass
 
-            # Parse the output to extract memory count
-            output = captured_output.getvalue()
-            memories_loaded = 0
-            if "Memories loaded:" in output:
-                for line in output.split("\n"):
-                    if "Memories loaded:" in line:
-                        try:
-                            memories_loaded = int(
-                                line.split("Memories loaded:")[1].strip()
-                            )
-                        except (IndexError, ValueError):
-                            pass
+            # Extract memory count from operations result
+            memories_loaded = result.get("memories_loaded", 0) if success else 0
 
             if success:
                 if memories_loaded > 0:

@@ -52,9 +52,7 @@ def validate_package() -> bool:
 
     # Check if package can be imported
     try:
-        run_command(
-            "python -c 'import cognitive_memory; import interfaces; import heimdall'"
-        )
+        run_command("python -c 'import cognitive_memory; import heimdall'")
     except SystemExit:
         console.print("[red]Error: Package modules cannot be imported[/red]")
         return False
