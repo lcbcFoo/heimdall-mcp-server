@@ -19,6 +19,7 @@ from heimdall.cli_commands.git_hook_commands import install_hook
 from heimdall.operations import CognitiveOperations
 
 
+@pytest.mark.slow
 class TestGitHookMemoryProcessing:
     """Test suite for git hook memory processing integration."""
 

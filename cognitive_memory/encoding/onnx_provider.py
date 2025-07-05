@@ -260,7 +260,7 @@ class ONNXEmbeddingProvider(EmbeddingProvider):
         if embeddings.ndim == 1:
             embeddings = embeddings.reshape(1, -1)
 
-        return embeddings.astype(np.float32)
+        return embeddings.astype(np.float32)  # type: ignore[no-any-return]
 
     def encode(self, text: str) -> np.ndarray:
         """
@@ -294,7 +294,7 @@ class ONNXEmbeddingProvider(EmbeddingProvider):
                 embedding_shape=embedding.shape,
             )
 
-            return embedding
+            return embedding  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(
@@ -441,7 +441,7 @@ class ONNXEmbeddingProvider(EmbeddingProvider):
             # Compute batch cosine similarity
             similarities = np.dot(candidates_norm, query_norm)
 
-            return similarities.astype(np.float32)
+            return similarities.astype(np.float32)  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(

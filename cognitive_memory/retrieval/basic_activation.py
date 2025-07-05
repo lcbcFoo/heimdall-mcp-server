@@ -139,7 +139,9 @@ class BasicActivationEngine(ActivationEngine):
         starting_memories.sort(
             key=lambda m: self._compute_cosine_similarity(
                 context, m.cognitive_embedding
-            ),
+            )
+            if m.cognitive_embedding is not None
+            else 0.0,
             reverse=True,
         )
 

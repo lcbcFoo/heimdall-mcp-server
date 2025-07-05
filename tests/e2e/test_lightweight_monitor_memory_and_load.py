@@ -16,9 +16,10 @@ import psutil
 import pytest
 from loguru import logger
 
-from heimdall.monitoring.lightweight_monitor import LightweightMonitor
+from lightweight_monitor import LightweightMonitor
 
 
+@pytest.mark.slow
 class TestLightweightMonitorMemoryAndLoad:
     """Test memory usage and load handling in lightweight monitoring."""
 

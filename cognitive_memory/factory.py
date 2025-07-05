@@ -24,6 +24,9 @@ from .core.interfaces import (
 )
 from .core.logging_setup import setup_logging
 
+# Global flag to track logging configuration
+_logging_configured = False
+
 
 class InitializationError(Exception):
     """Raised when system initialization fails."""
@@ -63,9 +66,10 @@ def create_default_system(config: SystemConfig | None = None) -> CognitiveMemory
 
     # Setup logging based on configuration (only if not already configured)
     # Check if logging has already been set up (e.g., by CLI early setup)
-    if not hasattr(logger, "_heimdall_configured"):
+    global _logging_configured
+    if not _logging_configured:
         setup_logging(config.logging)
-        logger._heimdall_configured = True
+        _logging_configured = True
 
     try:
         # Import factory functions
@@ -313,17 +317,20 @@ def _get_expected_interface(component_name: str) -> type | None:
     return interface_map.get(component_name)
 
 
-def validate_system_health(system: CognitiveSystem) -> dict[str, Any]:
+def validate_system_health(
+    system: CognitiveSystem, skip_memory_tests: bool = False
+) -> dict[str, Any]:
     """
     Perform health checks on a cognitive system instance.
 
     Args:
         system: CognitiveSystem instance to validate
+        skip_memory_tests: If True, skip tests that create/modify memories
 
     Returns:
         Dict with health check results
     """
-    logger.info("Performing system health check")
+    logger.info("Performing system health check", skip_memory_tests=skip_memory_tests)
 
     health_status: dict[str, Any] = {"healthy": True, "checks": {}, "errors": []}
 
@@ -332,23 +339,42 @@ def validate_system_health(system: CognitiveSystem) -> dict[str, Any]:
         system.get_memory_stats()
         health_status["checks"]["stats"] = "✓ System stats accessible"
 
-        # Test embedding with simple text
-        test_memory_id = system.store_experience("Health check test memory")
-        if test_memory_id:
-            health_status["checks"]["storage"] = "✓ Memory storage functional"
+        # Skip memory tests if requested (e.g., in test environments)
+        if not skip_memory_tests:
+            # Test embedding with simple text
+            test_memory_id = system.store_experience("Health check test memory")
+            if test_memory_id:
+                health_status["checks"]["storage"] = "✓ Memory storage functional"
 
-            # Test retrieval
-            results = system.retrieve_memories("health check", max_results=1)
-            if results:
-                health_status["checks"]["retrieval"] = "✓ Memory retrieval functional"
+                # Test retrieval
+                results = system.retrieve_memories("health check", max_results=1)
+                if results:
+                    health_status["checks"]["retrieval"] = (
+                        "✓ Memory retrieval functional"
+                    )
+                else:
+                    health_status["checks"]["retrieval"] = (
+                        "⚠ Memory retrieval returned no results"
+                    )
+
+                # Clean up test memory
+                try:
+                    system.delete_memory_by_id(test_memory_id)
+                    logger.debug(
+                        "Cleaned up health check test memory", memory_id=test_memory_id
+                    )
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "Failed to cleanup health check memory",
+                        error=str(cleanup_error),
+                    )
             else:
-                health_status["checks"]["retrieval"] = (
-                    "⚠ Memory retrieval returned no results"
-                )
+                health_status["healthy"] = False
+                health_status["checks"]["storage"] = "✗ Memory storage failed"
+                health_status["errors"].append("Failed to store test memory")
         else:
-            health_status["healthy"] = False
-            health_status["checks"]["storage"] = "✗ Memory storage failed"
-            health_status["errors"].append("Failed to store test memory")
+            health_status["checks"]["storage"] = "⚠ Memory tests skipped (test mode)"
+            health_status["checks"]["retrieval"] = "⚠ Memory tests skipped (test mode)"
 
     except Exception as e:
         health_status["healthy"] = False

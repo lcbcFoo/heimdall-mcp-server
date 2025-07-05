@@ -300,6 +300,10 @@ def project_init(
                         style="bold yellow",
                     )
 
+            # Check and download NLTK data
+            task = progress.add_task("Checking NLTK data...", total=None)
+            _ensure_nltk_data_available(progress, task)
+
         # Create project configuration file and directories
         heimdall_dir = project_path / ".heimdall"
         heimdall_dir.mkdir(exist_ok=True)
@@ -682,7 +686,7 @@ def project_clean(
             for collection in project_collections:
                 try:
                     collection_info = client.get_collection(collection.name)
-                    total_vectors += collection_info.points_count
+                    total_vectors += collection_info.points_count or 0
                 except Exception:
                     pass  # Skip collections that can't be queried
 
@@ -1259,3 +1263,104 @@ def _execute_mcp_setup() -> list[str]:
     except Exception as e:
         console.print(f"❌ Error setting up MCP integration: {e}", style="bold red")
         return configured_platforms
+
+
+def _ensure_nltk_data_available(progress: Any, task: Any) -> None:
+    """
+    Ensure required NLTK data is available for emotional dimension extraction.
+
+    Downloads punkt_tab tokenizer and other required NLTK resources needed by
+    TextBlob and NRCLex for emotional analysis in cognitive dimension extraction.
+
+    Args:
+        progress: Rich progress context for status updates
+        task: Progress task for status updates
+    """
+    try:
+        import subprocess
+        import sys
+
+        import nltk
+
+        # Check if punkt_tab is available (this is what's failing in tests)
+        try:
+            from nltk.tokenize import sent_tokenize
+
+            # Test if punkt_tab works
+            sent_tokenize("Test sentence.")
+            progress.update(task, description="✅ NLTK data already available")
+            return
+        except LookupError:
+            # punkt_tab not found, need to download
+            pass
+
+        progress.update(
+            task, description="📥 Downloading NLTK data (punkt_tab, punkt)..."
+        )
+
+        # Required NLTK data for TextBlob and NRCLex
+        required_datasets = [
+            "punkt_tab",  # New punkt tokenizer (required by latest NLTK)
+            "punkt",  # Legacy punkt tokenizer (fallback)
+        ]
+
+        # Download required datasets
+        for dataset in required_datasets:
+            try:
+                nltk.download(dataset, quiet=True)
+            except Exception as e:
+                # Log but continue - some datasets might not be available
+                console.print(f"⚠️ Could not download {dataset}: {e}", style="dim")
+
+        # Verify that tokenization now works
+        try:
+            from nltk.tokenize import sent_tokenize
+
+            sent_tokenize("Test sentence.")
+            progress.update(task, description="✅ NLTK data downloaded successfully")
+        except LookupError:
+            # If direct NLTK download failed, try alternative approach
+            progress.update(
+                task, description="📥 Using alternative NLTK download method..."
+            )
+
+            # Try using subprocess to download via python -m nltk.downloader
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import nltk; nltk.download('punkt_tab', quiet=True); nltk.download('punkt', quiet=True)",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode == 0:
+                progress.update(
+                    task, description="✅ NLTK data downloaded successfully"
+                )
+            else:
+                progress.update(task, description="❌ Failed to download NLTK data")
+                console.print(
+                    f"❌ Failed to download NLTK data. Error: {result.stderr}",
+                    style="bold red",
+                )
+                console.print(
+                    "Please run manually: python -c \"import nltk; nltk.download('punkt_tab'); nltk.download('punkt')\"",
+                    style="bold yellow",
+                )
+
+    except ImportError:
+        progress.update(task, description="⚠️ NLTK not installed, skipping")
+        console.print(
+            "⚠️ NLTK not installed, emotional analysis may not work properly",
+            style="bold yellow",
+        )
+    except Exception as e:
+        progress.update(task, description="❌ Failed to setup NLTK data")
+        console.print(f"❌ Error setting up NLTK data: {e}", style="bold red")
+        console.print(
+            "Please run manually: python -c \"import nltk; nltk.download('punkt_tab'); nltk.download('punkt')\"",
+            style="bold yellow",
+        )

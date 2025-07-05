@@ -66,6 +66,8 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pre-commit>=3.0.0",
     "pip-tools>=7.0.0",
+    "types-requests",
+    "types-PyYAML"
 ]
 test = [
     "pytest>=7.0.0",
@@ -147,9 +149,6 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-env = [
-    "PYTHONHASHSEED = 0",
-]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers --strict-config"
 testpaths = ["tests"]
@@ -160,10 +159,11 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "requires_qdrant: marks tests that require Qdrant service"
 ]
 
 [tool.coverage.run]
-source = ["cognitive_memory", "interfaces"]
+source = ["cognitive_memory", "heimdall", "lightweight_monitor.py"]
 omit = [
     "*/tests/*",
     "*/test_*",

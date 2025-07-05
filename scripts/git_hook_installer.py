@@ -19,14 +19,17 @@ from typing import Literal
 try:
     import typer
     from rich.console import Console
+
+    _has_rich = True
 except ImportError:
     # Fallback to basic print if rich/typer not available
     print("Warning: typer/rich not available, using basic interface")
-    typer = None
-    Console = None
+    typer = None  # type: ignore
+    Console = None  # type: ignore
+    _has_rich = False
 
 # Initialize console if available
-console = Console() if Console else None
+console = Console() if _has_rich else None
 
 
 def log_info(message: str) -> None:
@@ -411,7 +414,7 @@ def uninstall_hook(repo_path: Path, dry_run: bool = False) -> bool:
 def main() -> None:
     """Main entry point for the hook installer."""
     # Simple argument parsing if typer not available
-    if typer is None:
+    if not _has_rich:
         args = sys.argv[1:]
 
         # Default values

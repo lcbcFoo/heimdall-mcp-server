@@ -12,8 +12,7 @@ from pathlib import Path
 import pytest
 from loguru import logger
 
-from heimdall.monitoring.file_types import ChangeType, FileChangeEvent
-from heimdall.monitoring.lightweight_monitor import LightweightMonitor
+from lightweight_monitor import ChangeType, FileChangeEvent, LightweightMonitor
 
 
 class TestSubprocessDelegation:

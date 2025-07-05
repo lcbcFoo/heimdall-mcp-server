@@ -654,7 +654,7 @@ class HeimdallMCPServer:
         transport = SseServerTransport("/mcp")
 
         # Mount MCP server on the transport
-        app.mount("/mcp", transport.create_app(self.server))
+        app.mount("/mcp", transport)  # type: ignore[arg-type]
 
         # Run the server
         config = uvicorn.Config(

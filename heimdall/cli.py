@@ -72,6 +72,9 @@ logger.add(
 # Initialize rich console for enhanced output
 console = Console()
 
+# Global flag to track logging configuration
+_logging_configured = False
+
 # Main CLI app
 app = typer.Typer(
     name="heimdall",
@@ -162,6 +165,9 @@ def _setup_early_logging() -> None:
         from cognitive_memory.core.config import LoggingConfig, detect_project_config
         from cognitive_memory.core.logging_setup import setup_logging
 
+        # Global flag to track logging configuration
+        global _logging_configured
+
         # For project init commands, default to WARN level to reduce noise
         is_project_init = len(sys.argv) >= 3 and sys.argv[1:3] == ["project", "init"]
 
@@ -190,9 +196,7 @@ def _setup_early_logging() -> None:
         setup_logging(logging_config)
 
         # Mark logging as configured to prevent duplicate setup
-        from loguru import logger
-
-        logger._heimdall_configured = True
+        _logging_configured = True
 
     except Exception:
         # If early setup fails, continue with default logging

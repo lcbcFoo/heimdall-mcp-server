@@ -599,14 +599,14 @@ class TestGitHistoryLoaderPhase1:
     def mock_cognitive_system_with_storage(self, mock_storage_with_git_memories):
         """Create mock cognitive system with storage."""
         mock_system = MagicMock()
-        mock_system.storage = mock_storage_with_git_memories
+        mock_system.memory_storage = mock_storage_with_git_memories
         return mock_system
 
     @pytest.fixture
     def mock_cognitive_system_empty(self, mock_storage_empty):
         """Create mock cognitive system with empty storage."""
         mock_system = MagicMock()
-        mock_system.storage = mock_storage_empty
+        mock_system.memory_storage = mock_storage_empty
         return mock_system
 
     @pytest.fixture

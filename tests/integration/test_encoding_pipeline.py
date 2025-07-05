@@ -281,7 +281,7 @@ class TestEncodingPipelineIntegration:
 
     def test_factory_integration(self) -> None:
         """Test that factory functions produce working encoders."""
-        encoder = create_cognitive_encoder(device="cpu")
+        encoder = create_cognitive_encoder()
 
         text = "Testing factory-created encoder with cognitive dimensions"
         embedding = encoder.encode(text)

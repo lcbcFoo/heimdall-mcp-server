@@ -24,10 +24,10 @@ try:
     GITPYTHON_AVAILABLE = True
 except ImportError:
     GITPYTHON_AVAILABLE = False
-    Repo = type(None)
-    GitCommit = type(None)
-    InvalidGitRepositoryError = Exception
-    GitCommandError = Exception
+    Repo = type(None)  # type: ignore
+    GitCommit = type(None)  # type: ignore
+    InvalidGitRepositoryError = Exception  # type: ignore
+    GitCommandError = Exception  # type: ignore
 
 from loguru import logger
 
@@ -129,8 +129,6 @@ class GitHistoryMiner:
 
             # Check if repository has commits
             try:
-                if self.repo is None:
-                    return False
                 list(self.repo.iter_commits(max_count=1))
             except Exception:
                 logger.warning("Repository has no commits or is corrupted")
@@ -138,8 +136,6 @@ class GitHistoryMiner:
 
             # Check if we can access the HEAD
             try:
-                if self.repo is None:
-                    return False
                 _ = self.repo.head.commit
             except Exception:
                 logger.warning("Cannot access repository HEAD")
@@ -191,7 +187,7 @@ class GitHistoryMiner:
             kwargs: dict[str, Any] = {"max_count": max_commits}
 
             # Handle incremental mode with since_commit
-            if since_commit:
+            if since_commit is not None:
                 # Validate commit hash exists in repository
                 if not self._validate_commit_hash(since_commit):
                     raise ValueError(
@@ -347,10 +343,10 @@ class GitHistoryMiner:
                 else:
                     # Initial commit - all files are added
                     for item in commit.tree.traverse():
-                        if item.type == "blob":  # Only files
+                        if item.type == "blob":  # type: ignore  # Only files
                             try:
                                 file_change = FileChange(
-                                    file_path=item.path,
+                                    file_path=str(item.path),  # type: ignore
                                     change_type="A",
                                     lines_added=0,
                                     lines_deleted=0,
@@ -359,7 +355,7 @@ class GitHistoryMiner:
                             except Exception as e:
                                 logger.debug(
                                     "Failed to process initial commit file",
-                                    file_path=item.path,
+                                    file_path=str(item.path),  # type: ignore
                                     commit_hash=commit_hash,
                                     error=str(e),
                                 )
@@ -373,11 +369,19 @@ class GitHistoryMiner:
                 file_changes = []
 
             # Create and validate commit object
+            message_str = (
+                message
+                if isinstance(message, str)
+                else message.decode("utf-8", errors="ignore")
+            )
+            author_name_str = author_name or "Unknown"
+            author_email_str = author_email or "unknown@example.com"
+
             return Commit(
                 hash=commit_hash,
-                message=message,
-                author_name=author_name,
-                author_email=author_email,
+                message=message_str,
+                author_name=author_name_str,
+                author_email=author_email_str,
                 timestamp=timestamp,
                 file_changes=file_changes,
                 parent_hashes=parent_hashes,

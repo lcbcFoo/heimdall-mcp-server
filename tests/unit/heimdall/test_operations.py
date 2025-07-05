@@ -510,7 +510,9 @@ class TestCognitiveOperations:
                 "memories_failed": 0,
                 "connections_failed": 0,
             }
-            mock_cognitive_system.load_memories_from_source.return_value = mock_results
+            mock_cognitive_system.atomic_reload_memories_from_source.return_value = (
+                mock_results
+            )
 
             # Act
             with patch.object(operations_module, "Path") as mock_path:
@@ -556,7 +558,7 @@ class TestCognitiveOperations:
             # Assert
             assert result["success"] is False
             assert "Source validation failed" in result["error"]
-            mock_cognitive_system.load_memories_from_source.assert_not_called()
+            mock_cognitive_system.atomic_reload_memories_from_source.assert_not_called()
 
         @patch("cognitive_memory.core.config.get_config")
         @patch("cognitive_memory.loaders.MarkdownMemoryLoader")
@@ -596,7 +598,7 @@ class TestCognitiveOperations:
             assert result["hierarchy_distribution"] == {"L0": 1, "L1": 0, "L2": 1}
             assert result["dry_run"] is True
             # Should not call actual loading when dry_run=True
-            mock_cognitive_system.load_memories_from_source.assert_not_called()
+            mock_cognitive_system.atomic_reload_memories_from_source.assert_not_called()
 
         @patch("cognitive_memory.core.config.get_config")
         @patch("cognitive_memory.loaders.MarkdownMemoryLoader")
@@ -626,28 +628,64 @@ class TestCognitiveOperations:
 
             mock_results = {
                 "success": True,
-                "memories_loaded": 5,
-                "connections_created": 2,
-                "processing_time": 1.0,
-                "hierarchy_distribution": {"L0": 1, "L1": 2, "L2": 2},
+                "memories_loaded": 3,
+                "connections_created": 1,
+                "processing_time": 0.5,
+                "hierarchy_distribution": {"L0": 1, "L1": 1, "L2": 1},
                 "memories_failed": 0,
                 "connections_failed": 0,
             }
-            mock_cognitive_system.load_memories_from_source.return_value = mock_results
+            mock_cognitive_system.atomic_reload_memories_from_source.return_value = (
+                mock_results
+            )
 
             # Act
-            # Let Path work normally - it's fine to use real Path objects
-            result = operations.load_memories("/path/to/dir", recursive=True)
+            # Create a special mock for Path that handles the / operator and comparison properly
+            class MockPath:
+                def __init__(self, path_str):
+                    self.path_str = path_str
+
+                def is_dir(self):
+                    return True
+
+                def __truediv__(self, other):
+                    if other == ".git":
+                        git_mock = Mock()
+                        git_mock.exists.return_value = False
+                        return git_mock
+                    return MockPath(f"{self.path_str}/{other}")
+
+                def relative_to(self, other):
+                    return self.path_str.replace(str(other), "").lstrip("/")
+
+                def __str__(self):
+                    return self.path_str
+
+                def __lt__(self, other):
+                    return str(self) < str(other)
+
+                def __eq__(self, other):
+                    return str(self) == str(other)
+
+                def __hash__(self):
+                    return hash(self.path_str)
+
+            with patch.object(operations_module, "Path", MockPath):
+                result = operations.load_memories("/path/to/dir", recursive=True)
 
             # Assert
-            assert result["success"] is True
-            assert result["memories_loaded"] == 5  # Single directory processing result
+            print(f"Result: {result}")  # Debug print
+            assert result["success"] is True, (
+                f"Expected success=True, got success={result['success']}, error={result.get('error', 'None')}"
+            )
+            # Check that both files were processed
+            assert len(result["files_processed"]) == 2, (
+                f"Expected 2 files, got {len(result['files_processed'])}: {result['files_processed']}"
+            )
+            assert result["memories_loaded"] == 6  # 2 files * 3 memories each = 6
             assert (
-                result["connections_created"] == 2
-            )  # Single directory processing result
-            assert (
-                len(result["files_processed"]) == 1
-            )  # Directory treated as single source
+                result["connections_created"] == 2  # 2 files * 1 connection each = 2
+            )
 
         @patch("cognitive_memory.core.config.get_config")
         @patch("cognitive_memory.loaders.MarkdownMemoryLoader")
@@ -676,7 +714,7 @@ class TestCognitiveOperations:
             # Assert
             assert result["success"] is False
             assert "Use recursive=True" in result["error"]
-            mock_cognitive_system.load_memories_from_source.assert_not_called()
+            mock_cognitive_system.atomic_reload_memories_from_source.assert_not_called()
 
         @patch("cognitive_memory.core.config.get_config")
         @patch("cognitive_memory.loaders.GitHistoryLoader")
@@ -705,7 +743,9 @@ class TestCognitiveOperations:
                 "memories_failed": 0,
                 "connections_failed": 0,
             }
-            mock_cognitive_system.load_memories_from_source.return_value = mock_results
+            mock_cognitive_system.atomic_reload_memories_from_source.return_value = (
+                mock_results
+            )
 
             # Act
             with patch.object(operations_module, "Path") as mock_path:
@@ -774,8 +814,8 @@ class TestCognitiveOperations:
             # Arrange
             mock_loader = Mock()
             mock_loader.validate_source.return_value = True
-            mock_cognitive_system.load_memories_from_source.side_effect = Exception(
-                "Loading error"
+            mock_cognitive_system.atomic_reload_memories_from_source.side_effect = (
+                Exception("Loading error")
             )
 
             # Act
@@ -846,7 +886,7 @@ class TestCognitiveOperations:
 
             # Mock different results for different files
             def mock_load_side_effect(loader, file_path, **kwargs):
-                if "success.md" in file_path:
+                if "success.md" in str(file_path):
                     return {
                         "success": True,
                         "memories_loaded": 5,
@@ -857,9 +897,17 @@ class TestCognitiveOperations:
                         "connections_failed": 0,
                     }
                 else:
-                    return {"success": False}
+                    return {
+                        "success": False,
+                        "memories_loaded": 0,
+                        "connections_created": 0,
+                        "processing_time": 0.0,
+                        "hierarchy_distribution": {},
+                        "memories_failed": 0,
+                        "connections_failed": 0,
+                    }
 
-            mock_cognitive_system.load_memories_from_source.side_effect = (
+            mock_cognitive_system.atomic_reload_memories_from_source.side_effect = (
                 mock_load_side_effect
             )
 

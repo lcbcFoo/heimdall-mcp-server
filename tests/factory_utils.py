@@ -97,6 +97,17 @@ class MockVectorStorage(VectorStorage):
             return True
         return False
 
+    def delete_vectors_by_ids(self, memory_ids: list[str]) -> list[str]:
+        """Delete vectors by their IDs. Returns list of successfully deleted memory IDs."""
+        self.call_counts["delete"] += len(memory_ids)
+        successfully_deleted = []
+        for memory_id in memory_ids:
+            if memory_id in self.stored_vectors:
+                del self.stored_vectors[memory_id]
+                del self.stored_metadata[memory_id]
+                successfully_deleted.append(memory_id)
+        return successfully_deleted
+
     def get_collection_stats(self) -> dict[str, Any]:
         """Get collection statistics."""
         return {
@@ -174,6 +185,54 @@ class MockMemoryStorage(MemoryStorage):
                 ]
             ),
         }
+
+    def get_memories_by_source_path(self, source_path: str) -> list[CognitiveMemory]:
+        """Get memories by source file path from metadata."""
+        return [
+            m
+            for m in self.stored_memories.values()
+            if hasattr(m, "source_path") and m.source_path == source_path
+        ]
+
+    def delete_memories_by_source_path(self, source_path: str) -> int:
+        """Delete all memories associated with a source file path. Returns count of deleted memories."""
+        to_delete = [
+            memory_id
+            for memory_id, memory in self.stored_memories.items()
+            if hasattr(memory, "source_path") and memory.source_path == source_path
+        ]
+        for memory_id in to_delete:
+            del self.stored_memories[memory_id]
+        return len(to_delete)
+
+    def get_memories_by_tags(self, tags: list[str]) -> list[CognitiveMemory]:
+        """Get memories that have any of the specified tags."""
+        return [
+            m
+            for m in self.stored_memories.values()
+            if hasattr(m, "tags") and any(tag in getattr(m, "tags", []) for tag in tags)
+        ]
+
+    def delete_memories_by_tags(self, tags: list[str]) -> int:
+        """Delete memories that have any of the specified tags. Returns count of deleted memories."""
+        to_delete = [
+            memory_id
+            for memory_id, memory in self.stored_memories.items()
+            if hasattr(memory, "tags")
+            and any(tag in getattr(memory, "tags", []) for tag in tags)
+        ]
+        for memory_id in to_delete:
+            del self.stored_memories[memory_id]
+        return len(to_delete)
+
+    def delete_memories_by_ids(self, memory_ids: list[str]) -> int:
+        """Delete memories by their IDs. Returns count of deleted memories."""
+        deleted_count = 0
+        for memory_id in memory_ids:
+            if memory_id in self.stored_memories:
+                del self.stored_memories[memory_id]
+                deleted_count += 1
+        return deleted_count
 
 
 class MockConnectionGraph(ConnectionGraph):

@@ -155,9 +155,9 @@ class CognitiveShellCompleter(Completer):
                                         else:
                                             meta = "file"
                                     else:
-                                        meta = completion.display_meta or ""
+                                        meta = str(completion.display_meta or "")
                                 except Exception:
-                                    meta = completion.display_meta or ""
+                                    meta = str(completion.display_meta or "")
 
                                 yield Completion(
                                     completion.text,

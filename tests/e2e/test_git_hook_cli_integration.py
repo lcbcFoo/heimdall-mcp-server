@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.slow
 class TestGitHookCLIIntegration:
     """Test suite for git hook CLI integration."""
 

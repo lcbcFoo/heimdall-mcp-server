@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.slow
+@pytest.mark.requires_qdrant
 class TestMemoryDeletionBehavior:
     """Test suite for memory deletion behavioral correctness."""
 
@@ -29,11 +31,17 @@ class TestMemoryDeletionBehavior:
 
             # Initialize project (answer 'n' to both file monitoring and MCP integration questions)
             result = subprocess.run(
-                ["python", "-m", "heimdall.cli", "project", "init"],
+                [
+                    "python",
+                    "-m",
+                    "heimdall.cli",
+                    "project",
+                    "init",
+                    "--non-interactive",
+                ],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
-                input="n\nn\n",
             )
 
             assert result.returncode == 0, f"Project init failed: {result.stderr}"

@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 from loguru import logger
 
-from heimdall.monitoring.lightweight_monitor import (
+from lightweight_monitor import (
     LightweightMonitor,
     LightweightMonitorError,
     SingletonLock,
@@ -342,9 +342,7 @@ class TestLightweightMonitorSingleton:
         )
 
         # Mock MarkdownFileWatcher to raise exception during start
-        with patch(
-            "heimdall.monitoring.lightweight_monitor.MarkdownFileWatcher"
-        ) as mock_watcher_class:
+        with patch("lightweight_monitor.MarkdownFileWatcher") as mock_watcher_class:
             mock_watcher_class.side_effect = Exception(
                 "Test exception during file watcher creation"
             )

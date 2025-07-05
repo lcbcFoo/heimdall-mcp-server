@@ -147,20 +147,21 @@ class TestProjectIdGeneration:
         """Test project ID generation for complex repo names with multiple underscores."""
         project_id = get_project_id(path)
 
-        # Should still follow repo_name_hash8 format
+        # Should follow repo_name_hash8 format where repo_name can contain underscores
         parts = project_id.split("_")
-        assert len(parts) == 2, f"Expected exactly 2 parts, got {parts}"
+        assert len(parts) >= 2, f"Expected at least 2 parts, got {parts}"
 
         # Last part should be 8-character hash
-        hash_part = parts[1]
+        hash_part = parts[-1]
         assert len(hash_part) == 8, f"Expected 8-character hash, got {len(hash_part)}"
         assert hash_part.isalnum(), f"Hash should be alphanumeric, got {hash_part}"
 
-        # First part should be the sanitized repo name
+        # Everything except the last part should be the sanitized repo name
+        repo_name_part = "_".join(parts[:-1])
         repo_name = Path(path).name
         expected_repo_name = re.sub(r"[^a-zA-Z0-9]", "_", repo_name)
-        assert parts[0] == expected_repo_name, (
-            f"Expected {expected_repo_name}, got {parts[0]}"
+        assert repo_name_part == expected_repo_name, (
+            f"Expected {expected_repo_name}, got {repo_name_part}"
         )
 
     def test_project_id_hash_like_name_collision(self) -> None:

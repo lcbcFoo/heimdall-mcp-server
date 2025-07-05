@@ -310,6 +310,8 @@ class VectorSearchEngine:
             for point in search_result:
                 # Extract CognitiveMemory from payload
                 payload = point.payload
+                if payload is None:
+                    continue
                 memory = CognitiveMemory(
                     id=payload.get("memory_id", str(point.id)),
                     content=payload.get("content", ""),
@@ -411,11 +413,11 @@ class HierarchicalMemoryStorage(VectorStorage):
         # Initialize Qdrant client
         try:
             self.client = QdrantClient(
-                host=host,
-                port=port,
-                grpc_port=grpc_port,
+                host=self.host,
+                port=self.port,
+                grpc_port=self.grpc_port,
                 prefer_grpc=prefer_grpc,
-                timeout=timeout,
+                timeout=self.timeout,
             )
             logger.info(
                 "Connected to Qdrant server",
@@ -439,7 +441,7 @@ class HierarchicalMemoryStorage(VectorStorage):
             raise RuntimeError("Failed to initialize Qdrant collections")
 
     def store_vector(
-        self, id: str, vector: np.ndarray, metadata: dict[str, Any]
+        self, id: str, vector: np.ndarray | list[float], metadata: dict[str, Any]
     ) -> None:
         """
         Store a vector with associated metadata in appropriate hierarchy level.
