@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/lcbcfoo-heimdall-mcp-server-badge.png)](https://mseep.ai/app/lcbcfoo-heimdall-mcp-server)
+
 # Heimdall MCP Server - Your AI Coding Assistant's Long-Term Memory
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://pypi.org/project/heimdall-mcp/)
