@@ -5,6 +5,7 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)](https://modelcontextprotocol.io/)
 [![Heimdall Demo Video](https://img.shields.io/badge/YouTube-red)](https://youtu.be/7X1gntAXsao)
 ![PyPI - Version](https://img.shields.io/pypi/v/heimdall-mcp)
+[![MCPAmpel](https://img.shields.io/endpoint?url=https://mcpampel.com/badge/lcbcFoo/heimdall-mcp-server.json)](https://mcpampel.com/repo/lcbcFoo/heimdall-mcp-server)
 
 
 **The Problem:** Your AI coding assistant has short-lived memory. Every chat session starts from a blank slate.
